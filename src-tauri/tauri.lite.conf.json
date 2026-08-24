@@ -1,0 +1,38 @@
+{
+  "build": {
+    "beforeBuildCommand": "corepack pnpm@11.7.0 frontend:build:lite",
+    "devUrl": "http://127.0.0.1:1420/lite.html",
+    "frontendDist": "../dist/lite"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "DSH App",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "url": "lite.html",
+        "width": 720,
+        "height": 540,
+        "minWidth": 420,
+        "minHeight": 460,
+        "center": true
+      }
+    ],
+    "security": {
+      "capabilities": [
+        {
+          "identifier": "lite",
+          "description": "Local bootstrap page for the Lite edition.",
+          "windows": ["main"],
+          "permissions": [
+            "core:default",
+            "core:event:allow-listen",
+            "core:event:allow-unlisten",
+            "dialog:allow-open"
+          ]
+        }
+      ]
+    }
+  }
+}

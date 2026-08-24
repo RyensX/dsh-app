@@ -1,0 +1,26 @@
+{
+  "build": {
+    "beforeBuildCommand": "pnpm frontend:build:bundled",
+    "frontendDist": "../dist/bundled-node"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "DSH App",
+        "url": "index.html",
+        "width": 720,
+        "height": 540,
+        "minWidth": 420,
+        "minHeight": 460,
+        "center": true
+      }
+    ],
+    "security": {
+      "capabilities": ["bundled-node"]
+    }
+  },
+  "bundle": {
+    "externalBin": ["binaries/node"]
+  }
+}

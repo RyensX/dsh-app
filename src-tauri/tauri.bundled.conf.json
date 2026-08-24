@@ -1,0 +1,28 @@
+{
+  "build": {
+    "beforeBuildCommand": "corepack pnpm@11.7.0 frontend:build:bundled",
+    "frontendDist": "../dist/bundled"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "DSH App",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "url": "index.html",
+        "width": 720,
+        "height": 540,
+        "minWidth": 420,
+        "minHeight": 460,
+        "center": true
+      }
+    ],
+    "security": {
+      "capabilities": ["bundled"]
+    }
+  },
+  "bundle": {
+    "externalBin": ["binaries/node"]
+  }
+}

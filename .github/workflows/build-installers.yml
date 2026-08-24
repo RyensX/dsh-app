@@ -1,0 +1,176 @@
+name: Build installers
+
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      formal:
+        description: Require signing and notarization credentials
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            edition: bundled
+            platform: macos
+            arch: arm64
+            extension: dmg
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            edition: bundled
+            platform: macos
+            arch: x64
+            extension: dmg
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            edition: bundled
+            platform: windows
+            arch: x64
+            extension: exe
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            edition: lite
+            platform: macos
+            arch: arm64
+            extension: dmg
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            edition: lite
+            platform: macos
+            arch: x64
+            extension: dmg
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            edition: lite
+            platform: windows
+            arch: x64
+            extension: exe
+    runs-on: ${{ matrix.runner }}
+    env:
+      FORMAL_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.formal || false }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install application dependencies
+        run: corepack pnpm@11.7.0 install --frozen-lockfile
+      - name: Import Windows signing certificate
+        if: env.FORMAL_BUILD == 'true' && runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          if (!$env:WINDOWS_CERTIFICATE -or !$env:WINDOWS_CERTIFICATE_PASSWORD -or !$env:WINDOWS_TIMESTAMP_URL) { throw 'Windows signing secrets are incomplete' }
+          New-Item -ItemType Directory -Force -Path .build | Out-Null
+          $pfx = Join-Path $env:RUNNER_TEMP 'dsh-app-signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $certificate = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          @{ bundle = @{ windows = @{ certificateThumbprint = $certificate.Thumbprint; digestAlgorithm = 'sha256'; timestampUrl = $env:WINDOWS_TIMESTAMP_URL } } } | ConvertTo-Json -Depth 6 | Set-Content .build/windows-signing.json
+      - name: Build unsigned macOS installer
+        if: runner.os == 'macOS' && env.FORMAL_BUILD != 'true'
+        run: node scripts/build-app.mjs --edition ${{ matrix.edition }} --target ${{ matrix.target }} --formal false
+      - name: Build signed macOS installer
+        if: runner.os == 'macOS' && env.FORMAL_BUILD == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node scripts/build-app.mjs --edition ${{ matrix.edition }} --target ${{ matrix.target }} --formal true
+      - name: Build Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $formal = $env:FORMAL_BUILD.ToLowerInvariant()
+          $arguments = @('scripts/build-app.mjs', '--edition', '${{ matrix.edition }}', '--target', '${{ matrix.target }}', '--formal', $formal)
+          if ($formal -eq 'true') { $arguments += @('--signing-config', '.build/windows-signing.json') }
+          node @arguments
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-app-${{ matrix.edition }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: .build/installers/dsh-app-${{ matrix.edition }}-*-${{ matrix.platform }}-${{ matrix.arch }}.${{ matrix.extension }}
+          if-no-files-found: error
+          include-hidden-files: true
+
+  release:
+    name: Update pre-release
+    needs: build
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: pre-release-${{ github.repository }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: pre
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - name: Check build freshness
+        id: freshness
+        shell: bash
+        run: |
+          latest_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${DEFAULT_BRANCH}" --jq .sha)"
+          if [[ "$latest_sha" == "$GITHUB_SHA" ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipping stale build ${GITHUB_SHA}; ${DEFAULT_BRANCH} is now at ${latest_sha}."
+          fi
+      - name: Download installer artifacts
+        if: steps.freshness.outputs.publish == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dsh-app-*
+          path: release-assets
+          merge-multiple: true
+      - name: Create or update pre-release
+        if: steps.freshness.outputs.publish == 'true'
+        shell: bash
+        run: |
+          notes_file="${RUNNER_TEMP}/pre-release-notes.md"
+          printf '%s\n\n%s\n' \
+            "Latest successful installer build from [\`${GITHUB_SHA}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA})." \
+            "[View workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})" \
+            > "$notes_file"
+
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-assets/* --clobber
+            gh release edit "$RELEASE_TAG" \
+              --title "Latest pre-release build" \
+              --notes-file "$notes_file" \
+              --prerelease
+          else
+            gh release create "$RELEASE_TAG" release-assets/* \
+              --target "$GITHUB_SHA" \
+              --title "Latest pre-release build" \
+              --notes-file "$notes_file" \
+              --prerelease \
+              --latest=false
+          fi

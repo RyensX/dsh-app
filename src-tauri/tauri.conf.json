@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DSH App",
+  "version": "1.0.0",
+  "identifier": "ryens.dsh.app",
+  "build": {
+    "beforeDevCommand": "corepack pnpm@11.7.0 frontend:dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "corepack pnpm@11.7.0 frontend:build:bundled",
+    "frontendDist": "../dist/bundled"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "DSH App",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "url": "index.html",
+        "width": 720,
+        "height": 540,
+        "minWidth": 420,
+        "minHeight": 460,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'",
+      "capabilities": ["bundled"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "nsis"],
+    "category": "DeveloperTool",
+    "shortDescription": "Desktop carrier for DeepSeek Harness",
+    "longDescription": "Runs a pinned DeepSeek Harness web runtime as a managed local desktop application.",
+    "resources": ["resources/**/*"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "entitlements": "Entitlements.plist",
+      "infoPlist": "Info.plist"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

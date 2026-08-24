@@ -1,0 +1,7 @@
+packages:
+  - plugins/*
+allowBuilds:
+  esbuild: true
+confirmModulesPurge: false
+minimumReleaseAgeExclude:
+  - lucide@1.32.0

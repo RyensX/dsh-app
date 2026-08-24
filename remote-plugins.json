@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "plugins": [
+    {
+      "name": "dshmarket",
+      "source": "dshmarket",
+      "policy": "default",
+      "targets": ["macos", "windows"],
+      "editions": ["bundled", "lite"]
+    },
+    {
+      "name": "dsh-remote-gateway",
+      "source": "github:RyensX/dsh-remote-gateway",
+      "policy": "default",
+      "allowBuild": true,
+      "targets": ["macos", "windows"],
+      "editions": ["bundled", "lite"]
+    },
+    {
+      "name": "dsh-resize",
+      "source": "github:RyensX/dsh-resize",
+      "policy": "default",
+      "allowBuild": true,
+      "targets": ["macos", "windows"],
+      "editions": ["bundled", "lite"]
+    },
+    {
+      "name": "dsh-message-fold",
+      "source": "github:RyensX/dsh-message-fold",
+      "policy": "default",
+      "allowBuild": true,
+      "targets": ["macos", "windows"],
+      "editions": ["bundled", "lite"]
+    },
+    {
+      "name": "dsh-message-navigation",
+      "source": "github:RyensX/dsh-message-navigation",
+      "policy": "default",
+      "allowBuild": true,
+      "targets": ["macos", "windows"],
+      "editions": ["bundled", "lite"]
+    }
+  ]
+}

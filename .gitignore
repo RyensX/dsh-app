@@ -1,0 +1,10 @@
+node_modules/
+.pnpm-store/
+dist/
+.build/
+src-tauri/target/
+src-tauri/binaries/node-*
+src-tauri/resources/*
+!src-tauri/resources/.gitkeep
+*.log
+.DS_Store

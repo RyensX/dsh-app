@@ -1,0 +1,24 @@
+{
+  "$schema": "../../schemas/dsh-app.plugin.schema.json",
+  "schemaVersion": 1,
+  "id": "dsh-app-about",
+  "enabled": true,
+  "source": "src/index.ts",
+  "entry": "dist/index.mjs",
+  "client": {
+    "source": "src/client.tsx",
+    "entry": "dist/client.js",
+    "inject": [
+      "@deepseek-ai/dsh-client-connection",
+      "@deepseek-ai/dsh-client-locale",
+      "@deepseek-ai/dsh-client-runtime",
+      "@deepseek-ai/dsh-client-ui-primitives",
+      "@deepseek-ai/dsh-client-ui-settings",
+      "@deepseek-ai/dsh-client-ui-sidebar"
+    ],
+    "immediately": true
+  },
+  "targets": ["macos", "windows"],
+  "editions": ["bundled", "lite"],
+  "config": {}
+}

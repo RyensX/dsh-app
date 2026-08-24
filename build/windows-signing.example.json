@@ -1,0 +1,9 @@
+{
+  "bundle": {
+    "windows": {
+      "certificateThumbprint": "REPLACE_WITH_CERTIFICATE_THUMBPRINT",
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "REPLACE_WITH_CERTIFICATE_TIMESTAMP_URL"
+    }
+  }
+}

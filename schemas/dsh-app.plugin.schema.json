@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh-app.local/schemas/dsh-app.plugin.schema.json",
+  "title": "DSH App plugin manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "enabled", "entry", "targets", "config"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "enabled": { "type": "boolean" },
+    "entry": {
+      "type": "string",
+      "description": "Relative destination for the compiled ESM entry inside the plugin package."
+    },
+    "source": {
+      "type": "string",
+      "description": "Optional relative TypeScript/JavaScript source entry. Defaults to entry."
+    },
+    "client": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "entry"],
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Relative TypeScript/JavaScript source for the browser half."
+        },
+        "entry": {
+          "type": "string",
+          "description": "Relative destination for the dsh client bundle inside the plugin package."
+        },
+        "inject": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "immediately": { "type": "boolean" }
+      }
+    },
+    "targets": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["macos", "windows"] }
+    },
+    "editions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["bundled", "lite"] }
+    },
+    "config": {
+      "description": "JSON-serializable Cordis plugin configuration."
+    }
+  }
+}

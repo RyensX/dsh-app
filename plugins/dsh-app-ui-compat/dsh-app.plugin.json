@@ -1,0 +1,15 @@
+{
+  "$schema": "../../schemas/dsh-app.plugin.schema.json",
+  "schemaVersion": 1,
+  "id": "dsh-app-ui-compat",
+  "enabled": true,
+  "source": "src/index.ts",
+  "entry": "dist/index.mjs",
+  "client": {
+    "source": "src/client.ts",
+    "entry": "dist/client.js",
+    "immediately": true
+  },
+  "targets": ["macos"],
+  "config": {}
+}

@@ -1,0 +1,47 @@
+{
+  "name": "dsh-app",
+  "version": "1.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev:bundled": "node scripts/dev-app.mjs --edition bundled",
+    "dev:lite": "node scripts/dev-app.mjs --edition lite",
+    "frontend:dev": "vite --host 127.0.0.1 --port 1420",
+    "frontend:build:bundled": "vite build --mode bundled",
+    "frontend:build:lite": "vite build --mode lite",
+    "build:app": "node scripts/build-app.mjs",
+    "prepare:runtime": "node scripts/prepare-resources.mjs",
+    "verify:runtime": "node scripts/verify-resources.mjs",
+    "verify:frontend": "node scripts/verify-frontend.mjs",
+    "verify:artifact": "node scripts/verify-artifact.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:rust:bundled": "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features bundled",
+    "test:rust:lite": "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features lite",
+    "test:integration": "node scripts/test-runtime-integration.mjs",
+    "test:integration:managed": "node scripts/test-managed-runtime-integration.mjs",
+    "check": "corepack pnpm@11.7.0 frontend:build:bundled && corepack pnpm@11.7.0 frontend:build:lite && corepack pnpm@11.7.0 test && corepack pnpm@11.7.0 test:rust:bundled && corepack pnpm@11.7.0 test:rust:lite"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-dialog": "2.7.2",
+    "lucide": "1.32.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
+    "@types/node": "24.13.3",
+    "@types/semver": "7.8.0",
+    "esbuild": "0.28.2",
+    "semver": "7.8.5",
+    "typescript": "7.0.2",
+    "vite": "8.2.1",
+    "vitest": "4.1.8",
+    "yaml": "2.9.0",
+    "zod": "4.4.3"
+  }
+}

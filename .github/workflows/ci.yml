@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, windows-2025]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install application dependencies
+        run: corepack pnpm@11.7.0 install --frozen-lockfile
+      - name: Build isolated frontends
+        run: |
+          corepack pnpm@11.7.0 frontend:build:bundled
+          corepack pnpm@11.7.0 frontend:build:lite
+      - name: Typecheck build contracts
+        run: corepack pnpm@11.7.0 exec tsc --noEmit
+      - name: Test build contracts
+        run: corepack pnpm@11.7.0 test
+      - name: Test Bundled core
+        run: cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features bundled
+      - name: Test Lite core
+        run: cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features lite
+      - name: Test embedded and managed dsh runtimes
+        if: runner.os == 'macOS'
+        run: |
+          node scripts/prepare-resources.mjs --edition bundled
+          node scripts/verify-resources.mjs
+          node scripts/test-runtime-integration.mjs
+          node scripts/test-managed-runtime-integration.mjs
