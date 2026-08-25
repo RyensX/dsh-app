@@ -15,6 +15,8 @@ DSH App 是 [`deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness
 
 项目隔一段时间会发布release，希望随时体验新改进也可打开每次push的CI下载自动构建的包。
 
+macOS 用户首次启动前请阅读 [macOS 首次启动授权指南](docs/macos-installation.zh.md)。
+
 ## 功能
 
 - **桌面化运行**：自动启动并管理本地 dsh，支持 macOS 和 Windows。

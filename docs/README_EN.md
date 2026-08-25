@@ -15,6 +15,8 @@ Both editions share the same application identifier, user data, managed dsh upda
 
 The project publishes releases periodically. To try the latest improvements, you can also open the CI run for any push and download its automatically built packages.
 
+macOS users should read the [macOS first-launch authorization guide](macos-installation.md) before opening the app for the first time.
+
 ## Features
 
 - **Desktop experience**: Automatically starts and manages local dsh on macOS and Windows.
