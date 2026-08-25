@@ -4,7 +4,7 @@
 
 DSH App 是 [`deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness) 的桌面客户端， 基于Tauri2开发。
 
-项目目标是为dsh提供稳定且易用的客户端环境，除了壳本身，其他功能都是基于标准DSH开发，不会修改dsh，100%兼容，还可自由更新dsh源码跟进官方更新。
+目标是为dsh提供稳定且易用的客户端环境，除了壳本身，其他功能都是基于标准DSH开发，不会修改dsh，100%兼容，还可自由更新dsh源码跟进官方更新。
 
 目前支持macOS arm64/x64 和 Windows x64，提供两个打包类型版本：
 
