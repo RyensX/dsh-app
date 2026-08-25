@@ -4,9 +4,18 @@ set -u
 
 if [ "${1:-}" = 'detach' ]; then
   /usr/bin/hdiutil "$@" && exit 0
-  echo 'Normal hdiutil detach failed; retrying with -force.' >&2
   shift
-  exec /usr/bin/hdiutil detach -force "$@"
+
+  attempt=1
+  while [ "$attempt" -le 5 ]; do
+    delay=$((1 << (attempt - 1)))
+    echo "hdiutil detach failed; retrying with -force in ${delay}s (${attempt}/5)." >&2
+    sleep "$delay"
+    /usr/bin/hdiutil detach -force "$@" && exit 0
+    attempt=$((attempt + 1))
+  done
+
+  exit 1
 fi
 
 exec /usr/bin/hdiutil "$@"
