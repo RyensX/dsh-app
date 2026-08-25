@@ -121,16 +121,19 @@ jobs:
   release:
     name: Update pre-release
     needs: build
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    # 任一 matrix 失败时仍发布其余已成功生成并上传的安装包。
+    if: always() && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
     concurrency:
-      group: pre-release-${{ github.repository }}
+      group: latest-commit-pre-release-${{ github.repository }}
       cancel-in-progress: false
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: pre
+      RELEASE_TAG: latest-commit-pre-release
+      LEGACY_RELEASE_TAG: pre
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
       - name: Check build freshness
@@ -139,6 +142,12 @@ jobs:
         run: |
           latest_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${DEFAULT_BRANCH}" --jq .sha)"
           if [[ "$latest_sha" == "$GITHUB_SHA" ]]; then
+            artifact_count="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+              --jq '[.artifacts[] | select(.name | startswith("dsh-app-"))] | length')"
+            if (( artifact_count == 0 )); then
+              echo "No installer artifacts were produced by this run; keeping the existing pre-release unchanged."
+              exit 0
+            fi
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "Skipping stale build ${GITHUB_SHA}; ${DEFAULT_BRANCH} is now at ${latest_sha}."
@@ -154,22 +163,37 @@ jobs:
         if: steps.freshness.outputs.publish == 'true'
         shell: bash
         run: |
+          shopt -s nullglob
+          assets=(release-assets/*)
+          if (( ${#assets[@]} == 0 )); then
+            echo 'No installer artifacts were downloaded for this run; keeping the existing pre-release unchanged.'
+            exit 0
+          fi
+
           notes_file="${RUNNER_TEMP}/pre-release-notes.md"
           printf '%s\n\n%s\n' \
-            "Latest successful installer build from [\`${GITHUB_SHA}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA})." \
+            "Installer artifacts successfully produced by [\`${GITHUB_SHA}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}). Failed targets do not block publishing the available artifacts." \
             "[View workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})" \
             > "$notes_file"
 
+          if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1 \
+            && gh release view "$LEGACY_RELEASE_TAG" > /dev/null 2>&1; then
+            gh release edit "$LEGACY_RELEASE_TAG" --tag "$RELEASE_TAG"
+          fi
+
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release-assets/* --clobber
+            while IFS= read -r asset; do
+              [[ -z "$asset" ]] || gh release delete-asset "$RELEASE_TAG" "$asset" --yes
+            done < <(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
+            gh release upload "$RELEASE_TAG" "${assets[@]}"
             gh release edit "$RELEASE_TAG" \
-              --title "Latest pre-release build" \
+              --title "latest-commit-pre-release" \
               --notes-file "$notes_file" \
               --prerelease
           else
-            gh release create "$RELEASE_TAG" release-assets/* \
+            gh release create "$RELEASE_TAG" "${assets[@]}" \
               --target "$GITHUB_SHA" \
-              --title "Latest pre-release build" \
+              --title "latest-commit-pre-release" \
               --notes-file "$notes_file" \
               --prerelease \
               --latest=false
