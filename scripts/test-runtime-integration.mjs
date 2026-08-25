@@ -69,7 +69,7 @@ try {
   console.log(`Runtime integration passed: ${readyUrl}, ${pluginIndex.plugins.length} plugin(s)`)
 } finally {
   if (child.exitCode === null) await stopTree(child).catch(() => {})
-  rmSync(temporary, { recursive: true, force: true })
+  rmSync(temporary, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
 }
 
 async function waitForReady(processHandle, currentOutput) {
@@ -86,7 +86,7 @@ async function waitForReady(processHandle, currentOutput) {
 async function stopTree(processHandle) {
   if (processHandle.exitCode !== null) return
   if (process.platform === 'win32') {
-    spawnSync('taskkill.exe', ['/PID', String(processHandle.pid), '/T'], { windowsHide: true })
+    spawnSync('taskkill.exe', ['/PID', String(processHandle.pid), '/T', '/F'], { windowsHide: true })
   } else {
     process.kill(-processHandle.pid, 'SIGTERM')
   }
