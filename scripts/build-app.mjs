@@ -43,6 +43,11 @@ rmSync(compactResourcesRoot, { recursive: true, force: true })
 renameSync(resourcesRoot, compactResourcesRoot)
 config.bundle ??= {}
 config.bundle.resources = { [compactResourcesRoot]: 'resources' }
+if (target.appTarget === 'macos' && !formal) {
+  // 无 Apple 证书的 pre-release 使用完整 ad-hoc 签名，避免 Gatekeeper 误报应用已损坏。
+  config.bundle.macOS ??= {}
+  config.bundle.macOS.signingIdentity = '-'
+}
 const bundles = target.appTarget === 'macos' ? 'dmg' : 'nsis'
 const bundleRoot = resolve(root, 'src-tauri/target', triple, 'release/bundle', bundles)
 // Tauri 的 bundle 目录只是本次构建的临时输入，避免误选到上一 edition 的旧安装器。
@@ -100,6 +105,7 @@ function verifyBuiltArtifact() {
         '--edition', edition,
         '--path', application,
       ], { cwd: root })
+      run('codesign', ['--verify', '--deep', '--strict', '--verbose=4', application])
     } finally {
       if (attached) run('hdiutil', ['detach', mounted])
       rmSync(mounted, { recursive: true, force: true })
