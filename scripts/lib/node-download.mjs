@@ -53,27 +53,45 @@ export async function prepareNodeDistribution({ root, target, version, baseUrl, 
 
   const extracted = resolve(cache, 'extracted')
   const top = archiveName.replace(/\.(?:tar\.gz|zip)$/u, '')
-  const nodeRelative = process.platform === 'win32' ? 'node.exe' : 'bin/node'
-  const nodeSource = resolve(extracted, top, nodeRelative)
-  if (!existsSync(nodeSource)) extractArchive(archive, extracted)
+  const layout = nodeDistributionLayout(target)
+  const nodeSource = resolve(extracted, top, layout.nodeExecutable)
+  const corepack = resolve(extracted, top, layout.corepack)
+  const corepackEntry = resolve(corepack, 'dist/corepack.js')
+  if (!existsSync(nodeSource) || !existsSync(corepackEntry)) extractArchive(archive, extracted)
   if (!existsSync(nodeSource)) throw new Error(`Node executable missing after extraction: ${nodeSource}`)
+  if (!existsSync(corepackEntry)) throw new Error(`Corepack entrypoint missing after extraction: ${corepackEntry}`)
 
   let sidecar = null
   if (copySidecar) {
-    sidecar = resolve(root, 'src-tauri/binaries', `node-${target.triple}${process.platform === 'win32' ? '.exe' : ''}`)
+    sidecar = resolve(root, 'src-tauri/binaries', `node-${target.triple}${layout.sidecarSuffix}`)
     mkdirSync(dirname(sidecar), { recursive: true })
     copyFileSync(nodeSource, sidecar)
-    if (process.platform !== 'win32') run('chmod', ['755', sidecar])
+    if (target.nodePlatform !== 'win32') run('chmod', ['755', sidecar])
   }
 
   return {
     executable: nodeSource,
     distribution: resolve(extracted, top),
-    corepack: resolve(extracted, top, 'lib/node_modules/corepack'),
+    corepack,
     sidecar,
     license: resolve(extracted, top, 'LICENSE'),
     archive: basename(archive),
     sha256: actual,
+  }
+}
+
+export function nodeDistributionLayout(target) {
+  if (target.nodePlatform === 'win32') {
+    return {
+      nodeExecutable: 'node.exe',
+      corepack: 'node_modules/corepack',
+      sidecarSuffix: '.exe',
+    }
+  }
+  return {
+    nodeExecutable: 'bin/node',
+    corepack: 'lib/node_modules/corepack',
+    sidecarSuffix: '',
   }
 }
 

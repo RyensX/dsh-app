@@ -215,6 +215,8 @@ if (edition === 'bundled') {
     pluginDigest: payload.digest,
   }, null, 2)}\n`)
   inventory = collectLicenseInventory(runtimeRoot)
+  // 运行时已经收敛到 stage，不让上游临时工作树继续占用安装包构建磁盘。
+  rmSync(cloneRoot, { recursive: true, force: true })
 }
 
 writeLicenses({

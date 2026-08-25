@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
@@ -95,7 +95,16 @@ function executeShim(shimRoot: string, name: string, args: string[], capture: st
 
   const shim = join(shimRoot, `${name}.cmd`).replaceAll('"', '""')
   const command = `""${shim}" ${args.map(cmdArgument).join(' ')}"`
-  execFileSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', command], { env })
+  const result = spawnSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', command], {
+    env,
+    encoding: 'utf8',
+    // command 已按 cmd.exe 规则完成引用，避免 Node 再次转义其中的双引号。
+    windowsVerbatimArguments: true,
+  })
+  if (result.error) throw result.error
+  if (result.status !== 0) {
+    throw new Error(`Windows shim failed with ${String(result.status)}:\n${result.stdout}${result.stderr}`)
+  }
 }
 
 function cmdArgument(value: string): string {

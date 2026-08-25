@@ -47,6 +47,9 @@ const tauriArgs = [
   '--bundles', bundles,
   '--config', JSON.stringify(config),
 ]
+const macosCiBuild = target.appTarget === 'macos' && process.env.CI === 'true'
+if (macosCiBuild && !formal) tauriArgs.push('--verbose')
+if (macosCiBuild) run('df', ['-h', '.'], { cwd: root })
 runCorepack(['pnpm@11.7.0', ...tauriArgs], {
   cwd: root,
   env: { ...process.env, CI: 'true' },
