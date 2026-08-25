@@ -159,7 +159,7 @@ jobs:
           pattern: dsh-app-*
           path: release-assets
           merge-multiple: true
-      - name: Create or update pre-release
+      - name: Replace pre-release
         if: steps.freshness.outputs.publish == 'true'
         shell: bash
         run: |
@@ -171,25 +171,55 @@ jobs:
           fi
 
           notes_file="${RUNNER_TEMP}/pre-release-notes.md"
-          printf '%s\n\n%s\n' \
-            "Installer artifacts successfully produced by [\`${GITHUB_SHA}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}). Failed targets do not block publishing the available artifacts." \
-            "[View workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})" \
-            > "$notes_file"
+          commit_message="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" --jq .commit.message)"
+          short_sha="${GITHUB_SHA:0:7}"
+          {
+            printf '## 最新提交构建\n\n'
+            printf '| 构建信息 | 详情 |\n'
+            printf '| --- | --- |\n'
+            printf '| 提交 | [`%s`](%s/%s/commit/%s) |\n' \
+              "$short_sha" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA"
+            printf '| 工作流 | [运行 #%s · 尝试 %s](%s/%s/actions/runs/%s) |\n' \
+              "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            printf '| 安装包 | 成功生成 %s 个 |\n\n' "${#assets[@]}"
+            printf '### 提交说明\n\n'
+            while IFS= read -r line || [[ -n "$line" ]]; do
+              printf '> %s\n' "$line"
+            done <<< "$commit_message"
+            printf '\n### 构建产物\n\n'
+            printf '> [!WARNING]\n'
+            printf '> 这是根据最新提交自动生成的构建版本，可能不稳定、功能不完整，或包含已知及未知问题。'
+            printf '请谨慎使用，不要将其用于生产环境或其他关键工作。\n\n'
+            printf '%s\n\n' '---'
+            printf '## Latest commit build\n\n'
+            printf '| Build | Details |\n'
+            printf '| --- | --- |\n'
+            printf '| Commit | [`%s`](%s/%s/commit/%s) |\n' \
+              "$short_sha" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA"
+            printf '| Workflow | [Run #%s · attempt %s](%s/%s/actions/runs/%s) |\n' \
+              "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            printf '| Installers | %s successfully produced |\n\n' "${#assets[@]}"
+            printf '### Commit message\n\n'
+            while IFS= read -r line || [[ -n "$line" ]]; do
+              printf '> %s\n' "$line"
+            done <<< "$commit_message"
+            printf '\n### Artifacts\n\n'
+            printf '> [!WARNING]\n'
+            printf '> This is an automatically generated build from the latest commit. '
+            printf 'It may be unstable, incomplete, or contain known or unknown issues. '
+            printf 'Use it with caution, and do not rely on it for production or other critical work.\n'
+          } > "$notes_file"
 
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
-            while IFS= read -r asset; do
-              [[ -z "$asset" ]] || gh release delete-asset "$RELEASE_TAG" "$asset" --yes
-            done < <(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
-            gh release upload "$RELEASE_TAG" "${assets[@]}"
-            gh release edit "$RELEASE_TAG" \
-              --title "latest-commit-pre-release" \
-              --notes-file "$notes_file" \
-              --prerelease
-          else
-            gh release create "$RELEASE_TAG" "${assets[@]}" \
-              --target "$GITHUB_SHA" \
-              --title "latest-commit-pre-release" \
-              --notes-file "$notes_file" \
-              --prerelease \
-              --latest=false
+            gh release delete "$RELEASE_TAG" --cleanup-tag --yes
+          elif gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" > /dev/null 2>&1; then
+            # 上次发布中断时可能只留下 tag；删除它以确保新 tag 指向本次提交。
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${RELEASE_TAG}"
           fi
+
+          gh release create "$RELEASE_TAG" "${assets[@]}" \
+            --target "$GITHUB_SHA" \
+            --title "latest-commit-pre-release" \
+            --notes-file "$notes_file" \
+            --prerelease \
+            --latest=false
