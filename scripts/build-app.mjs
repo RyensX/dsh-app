@@ -1,5 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { delimiter, resolve } from 'node:path'
 import { parseArgs, requiredArg } from './lib/args.mjs'
 import { runCorepack } from './lib/corepack.mjs'
 import { installerFilename } from './lib/installers.mjs'
@@ -50,9 +50,17 @@ const tauriArgs = [
 const macosCiBuild = target.appTarget === 'macos' && process.env.CI === 'true'
 if (macosCiBuild && !formal) tauriArgs.push('--verbose')
 if (macosCiBuild) run('df', ['-h', '.'], { cwd: root })
+const tauriEnvironment = { ...process.env, CI: 'true' }
+if (macosCiBuild) {
+  // create-dmg 遇到 DiskArbitration 超时时，由 shim 在常规 detach 失败后强制卸载。
+  tauriEnvironment.PATH = [
+    resolve(root, 'scripts/ci/macos'),
+    tauriEnvironment.PATH ?? '',
+  ].filter(Boolean).join(delimiter)
+}
 runCorepack(['pnpm@11.7.0', ...tauriArgs], {
   cwd: root,
-  env: { ...process.env, CI: 'true' },
+  env: tauriEnvironment,
 })
 run(process.execPath, [
   'scripts/verify-frontend.mjs',

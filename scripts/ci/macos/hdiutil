@@ -1,0 +1,12 @@
+#!/bin/sh
+
+set -u
+
+if [ "${1:-}" = 'detach' ]; then
+  /usr/bin/hdiutil "$@" && exit 0
+  echo 'Normal hdiutil detach failed; retrying with -force.' >&2
+  shift
+  exec /usr/bin/hdiutil detach -force "$@"
+fi
+
+exec /usr/bin/hdiutil "$@"
