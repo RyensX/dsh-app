@@ -146,9 +146,15 @@ if (edition === 'bundled') {
   enableInjectedWorkspacePackages(cloneRoot)
 
   const buildEnv = { ...process.env, CI: 'true', DSH_CLIENT_COMMIT_HASH: commit }
+  const inheritedPathKey = Object.keys(buildEnv).find(key => key.toLowerCase() === 'path')
+  const inheritedPath = inheritedPathKey ? buildEnv[inheritedPathKey] ?? '' : ''
+  // Windows 环境变量不区分大小写，避免 Path/PATH 重复时丢失 runner 工具路径。
+  for (const key of Object.keys(buildEnv)) {
+    if (key.toLowerCase() === 'path') delete buildEnv[key]
+  }
   delete buildEnv.NODE_OPTIONS
   delete buildEnv.NODE_PATH
-  buildEnv.PATH = `${resolve(nodeDistribution.executable, '..')}${delimiter}${buildEnv.PATH ?? ''}`
+  buildEnv.PATH = [resolve(nodeDistribution.executable, '..'), inheritedPath].filter(Boolean).join(delimiter)
   const corepackOptions = {
     cwd: cloneRoot,
     env: buildEnv,
