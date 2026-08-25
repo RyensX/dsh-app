@@ -175,7 +175,7 @@ if (edition === 'bundled') {
   runCorepack([
     'pnpm@11.7.0',
     '--config.shamefully-hoist=true',
-    '--config.virtual-store-dir-max-length=50',
+    '--config.virtual-store-dir-max-length=20',
     '--filter',
     '@deepseek-ai/dsh',
     'deploy',

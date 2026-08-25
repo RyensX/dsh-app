@@ -36,6 +36,13 @@ if (edition === 'bundled') {
 
 const config = JSON.parse(readFileSync(resolve(root, `src-tauri/tauri.${edition}.conf.json`), 'utf8'))
 if (signingOverlay) deepMerge(config, signingOverlay)
+const resourcesRoot = resolve(root, 'src-tauri/resources')
+const compactResourcesRoot = resolve(root, '.build/r')
+// Tauri/NSIS 使用资源的绝对源路径，统一缩短打包输入路径以避免 Windows MAX_PATH。
+rmSync(compactResourcesRoot, { recursive: true, force: true })
+renameSync(resourcesRoot, compactResourcesRoot)
+config.bundle ??= {}
+config.bundle.resources = { [compactResourcesRoot]: 'resources' }
 const bundles = target.appTarget === 'macos' ? 'dmg' : 'nsis'
 const bundleRoot = resolve(root, 'src-tauri/target', triple, 'release/bundle', bundles)
 // Tauri 的 bundle 目录只是本次构建的临时输入，避免误选到上一 edition 的旧安装器。
@@ -58,10 +65,14 @@ if (macosCiBuild) {
     tauriEnvironment.PATH ?? '',
   ].filter(Boolean).join(delimiter)
 }
-runCorepack(['pnpm@11.7.0', ...tauriArgs], {
-  cwd: root,
-  env: tauriEnvironment,
-})
+try {
+  runCorepack(['pnpm@11.7.0', ...tauriArgs], {
+    cwd: root,
+    env: tauriEnvironment,
+  })
+} finally {
+  renameSync(compactResourcesRoot, resourcesRoot)
+}
 run(process.execPath, [
   'scripts/verify-frontend.mjs',
   '--edition', edition,
