@@ -190,6 +190,8 @@ jobs:
             printf '> [!WARNING]\n'
             printf '> 这是根据最新提交自动生成的构建版本，可能不稳定、功能不完整，或包含已知及未知问题。'
             printf '请谨慎使用，不要将其用于生产环境或其他关键工作。\n\n'
+            printf 'macOS 用户首次启动前请阅读 [macOS 首次启动授权指南](%s/%s/blob/%s/docs/macos-installation.zh.md)。\n\n' \
+              "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA"
             printf '%s\n\n' '---'
             printf '## Latest commit build\n\n'
             printf '| Build | Details |\n'
@@ -207,7 +209,9 @@ jobs:
             printf '> [!WARNING]\n'
             printf '> This is an automatically generated build from the latest commit. '
             printf 'It may be unstable, incomplete, or contain known or unknown issues. '
-            printf 'Use it with caution, and do not rely on it for production or other critical work.\n'
+            printf 'Use it with caution, and do not rely on it for production or other critical work.\n\n'
+            printf 'Before opening the app for the first time on macOS, read the [macOS first-launch authorization guide](%s/%s/blob/%s/docs/macos-installation.md).\n' \
+              "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA"
           } > "$notes_file"
 
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
