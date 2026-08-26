@@ -10,6 +10,7 @@ use crate::atomic::atomic_write;
 use crate::error::LaunchError;
 use crate::model::{BootstrapManifest, LaunchStatus, RuntimeLayout};
 use crate::node_check::{self, NodeIdentity};
+use crate::process::configure_background_process;
 use crate::runtime::{load_layout, resolve_packaged_runtime, resource_stage};
 use crate::user_dirs::UserDirs;
 
@@ -345,7 +346,8 @@ pub fn reconcile_remote_plugins(
             message: "Preparing remote plugins...".into(),
         },
     );
-    let output = Command::new(node)
+    let mut command = Command::new(node);
+    command
         .arg(&tools.manager)
         .arg("reconcile-remote-plugins")
         .args(["--manifest"])
@@ -365,16 +367,16 @@ pub fn reconcile_remote_plugins(
         .args(["--dsh-commit", &layout.manifest.dsh.commit])
         .env_remove("NODE_OPTIONS")
         .env_remove("NODE_PATH")
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|error| {
-            LaunchError::io(
-                "REMOTE_PLUGIN_INSTALL_FAILED",
-                "The remote plugin installer could not be started",
-                "No required remote plugin was activated.",
-                &error,
-            )
-        })?;
+        .stdin(Stdio::null());
+    configure_background_process(&mut command);
+    let output = command.output().map_err(|error| {
+        LaunchError::io(
+            "REMOTE_PLUGIN_INSTALL_FAILED",
+            "The remote plugin installer could not be started",
+            "No required remote plugin was activated.",
+            &error,
+        )
+    })?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     if !output.status.success() {
@@ -468,6 +470,7 @@ fn install_baseline(
     if let Some(tag) = &bootstrap.dsh.tag {
         command.args(["--tag", tag]);
     }
+    configure_background_process(&mut command);
     let mut child = command.spawn().map_err(|error| {
         LaunchError::io(
             "DSH_BUILD_FAILED",
@@ -609,7 +612,8 @@ fn prepare_restore_profile(
     }
 
     let tools = runtime_manager_paths(app)?;
-    let output = Command::new(node)
+    let mut command = Command::new(node);
+    command
         .arg(&tools.manager)
         .arg("prepare-restore-profile")
         .args(["--profile"])
@@ -617,16 +621,16 @@ fn prepare_restore_profile(
         .args(["--credentials-layout", credentials_layout])
         .env_remove("NODE_OPTIONS")
         .env_remove("NODE_PATH")
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|error| {
-            LaunchError::io(
-                "RESTORE_PROFILE_PREPARE_FAILED",
-                "The dsh profile could not be prepared for restore",
-                "The original credentials file was left unchanged.",
-                &error,
-            )
-        })?;
+        .stdin(Stdio::null());
+    configure_background_process(&mut command);
+    let output = command.output().map_err(|error| {
+        LaunchError::io(
+            "RESTORE_PROFILE_PREPARE_FAILED",
+            "The dsh profile could not be prepared for restore",
+            "The original credentials file was left unchanged.",
+            &error,
+        )
+    })?;
     if !output.status.success() {
         return Err(LaunchError::new(
             "RESTORE_PROFILE_PREPARE_FAILED",
@@ -675,7 +679,8 @@ fn refresh_managed_plugins(
     runtime_id: &str,
 ) -> Result<(), LaunchError> {
     let tools = runtime_manager_paths(app)?;
-    let output = Command::new(node)
+    let mut command = Command::new(node);
+    command
         .arg(&tools.manager)
         .arg("refresh-plugins")
         .args(["--bootstrap"])
@@ -687,16 +692,16 @@ fn refresh_managed_plugins(
         .args(["--runtime-id", runtime_id])
         .env_remove("NODE_OPTIONS")
         .env_remove("NODE_PATH")
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|error| {
-            LaunchError::io(
-                "APP_PLUGIN_REFRESH_FAILED",
-                "The App plugin refresher could not be started",
-                "The existing compiled dsh runtime was left unchanged.",
-                &error,
-            )
-        })?;
+        .stdin(Stdio::null());
+    configure_background_process(&mut command);
+    let output = command.output().map_err(|error| {
+        LaunchError::io(
+            "APP_PLUGIN_REFRESH_FAILED",
+            "The App plugin refresher could not be started",
+            "The existing compiled dsh runtime was left unchanged.",
+            &error,
+        )
+    })?;
     if !output.status.success() {
         return Err(LaunchError::new(
             "APP_PLUGIN_REFRESH_FAILED",

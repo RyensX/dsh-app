@@ -9,6 +9,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::error::LaunchError;
 use crate::model::{BootstrapManifest, RuntimeLayout};
+use crate::process::configure_background_process;
 use crate::user_dirs::UserDirs;
 
 const NODE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -312,6 +313,7 @@ fn preflight_dsh(
 }
 
 fn capture_with_timeout(command: &mut Command, timeout: Duration) -> io::Result<CapturedOutput> {
+    configure_background_process(command);
     let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

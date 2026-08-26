@@ -4,10 +4,28 @@ use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// 后台进程在 Windows 上不得创建或继承可见的控制台窗口。
+pub fn configure_background_process(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = command;
+}
+
 pub fn spawn_group(command: &mut Command) -> io::Result<GroupChild> {
     #[cfg(windows)]
     {
-        command.group().kill_on_drop(true).spawn()
+        command
+            .group()
+            .kill_on_drop(true)
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
     }
     #[cfg(not(windows))]
     {

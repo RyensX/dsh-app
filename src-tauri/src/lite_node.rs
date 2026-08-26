@@ -16,6 +16,7 @@ use tauri::AppHandle;
 use crate::atomic::atomic_write;
 use crate::error::LaunchError;
 use crate::model::BootstrapManifest;
+use crate::process::configure_background_process;
 use crate::user_dirs::UserDirs;
 
 pub const NODE_NOT_EXECUTABLE: &str = "NODE_NOT_EXECUTABLE";
@@ -614,6 +615,7 @@ fn probe_node_with_script(
 }
 
 fn capture_with_timeout(command: &mut Command, timeout: Duration) -> io::Result<CapturedOutput> {
+    configure_background_process(command);
     let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
