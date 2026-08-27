@@ -1,7 +1,10 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { parseArgs, requiredArg } from './lib/args.mjs'
 import { run } from './lib/process.mjs'
+
+const WINDOWS_UNINSTALL_TIMEOUT_MS = 60_000
+const WINDOWS_UNINSTALL_POLL_INTERVAL_MS = 100
 
 if (process.platform !== 'win32') throw new Error('Windows installer smoke test requires Windows')
 if (process.env.CI !== 'true' || process.env.GITHUB_ACTIONS !== 'true') {
@@ -37,7 +40,6 @@ try {
       '--node', resolve(installRoot, 'node.exe'),
     ], { cwd: root })
   }
-  console.log(`Windows installer smoke test passed: ${edition} / ${installRoot}`)
 } catch (error) {
   failure = error
 } finally {
@@ -53,11 +55,30 @@ try {
   }
 }
 if (failure) throw failure
+console.log(`Windows installer smoke test passed: ${edition} / ${installRoot}`)
 
 async function waitForRemoval(path) {
-  const deadline = Date.now() + 15_000
+  const deadline = Date.now() + WINDOWS_UNINSTALL_TIMEOUT_MS
   while (existsSync(path) && Date.now() < deadline) {
-    await new Promise(resolvePromise => setTimeout(resolvePromise, 100))
+    await new Promise(resolvePromise => setTimeout(resolvePromise, WINDOWS_UNINSTALL_POLL_INTERVAL_MS))
   }
-  if (existsSync(path)) throw new Error(`silent uninstaller did not remove ${path}`)
+  if (!existsSync(path)) return
+
+  let entries
+  try {
+    entries = readdirSync(path).sort()
+  } catch (error) {
+    // 目录可能恰好在读取时被 NSIS 的自删除进程移除。
+    if (!existsSync(path)) return
+    throw error
+  }
+  const visible = entries.slice(0, 20)
+  const omitted = entries.length - visible.length
+  const summary = entries.length === 0
+    ? '(directory is empty)'
+    : `${visible.join(', ')}${omitted > 0 ? `, ... ${omitted} more` : ''}`
+  throw new Error(
+    `silent uninstaller did not remove ${path} after ${WINDOWS_UNINSTALL_TIMEOUT_MS}ms; `
+    + `remaining entries (${entries.length}): ${summary}`,
+  )
 }
