@@ -19,13 +19,14 @@
     "verify:runtime": "node scripts/verify-resources.mjs",
     "verify:frontend": "node scripts/verify-frontend.mjs",
     "verify:artifact": "node scripts/verify-artifact.mjs",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:rust:bundled": "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features bundled",
     "test:rust:lite": "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features lite",
     "test:integration": "node scripts/test-runtime-integration.mjs",
     "test:integration:managed": "node scripts/test-managed-runtime-integration.mjs",
-    "check": "corepack pnpm@11.7.0 frontend:build:bundled && corepack pnpm@11.7.0 frontend:build:lite && corepack pnpm@11.7.0 test && corepack pnpm@11.7.0 test:rust:bundled && corepack pnpm@11.7.0 test:rust:lite"
+    "check": "corepack pnpm@11.7.0 frontend:build:bundled && corepack pnpm@11.7.0 frontend:build:lite && corepack pnpm@11.7.0 typecheck && corepack pnpm@11.7.0 test && corepack pnpm@11.7.0 test:rust:bundled && corepack pnpm@11.7.0 test:rust:lite"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
