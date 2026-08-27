@@ -16,7 +16,7 @@ import appIcon from '../../../assets/app-icon-ui.png'
 import { en, zh, type AboutKey } from './locales.ts'
 
 const NS = 'settings.dshAppAbout'
-const BACKGROUND_CHECK_WAKE_MS = 60 * 60 * 1000
+const AUTOMATIC_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
 const POST_STARTUP_DELAY_MS = 1_500
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -637,14 +637,15 @@ export function apply(ctx: ClientContext): void {
 
   ctx.effect(() => {
     let startupTimer: number | undefined
-    let dailyTimer: number | undefined
+    let automaticTimer: number | undefined
     const startChecks = (): void => {
       // 首屏与插件槽位都完成装载后才发请求，更新检查不进入 App 启动关键路径。
       startupTimer = window.setTimeout(() => {
         void store.refreshAutomatic(true)
-        dailyTimer = window.setInterval(() => {
-          void store.refreshAutomatic(false)
-        }, BACKGROUND_CHECK_WAKE_MS)
+        // 自动检查使用独立的 24 小时周期，启动检查和手动检查都不会重置该计时器。
+        automaticTimer = window.setInterval(() => {
+          void store.refreshAutomatic(true)
+        }, AUTOMATIC_CHECK_INTERVAL_MS)
       }, POST_STARTUP_DELAY_MS)
     }
     if (document.readyState === 'complete') startChecks()
@@ -652,7 +653,7 @@ export function apply(ctx: ClientContext): void {
     return () => {
       window.removeEventListener('load', startChecks)
       if (startupTimer !== undefined) window.clearTimeout(startupTimer)
-      if (dailyTimer !== undefined) window.clearInterval(dailyTimer)
+      if (automaticTimer !== undefined) window.clearInterval(automaticTimer)
     }
   }, 'dsh-app-about: post-startup update checks')
 }
