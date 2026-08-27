@@ -4,6 +4,10 @@ import { assertPluginPayloadIdentity } from './lib/plugin-payload-contract.mjs'
 import { readRemotePluginManifest, selectRemotePlugins } from './lib/remote-plugins.mjs'
 import { assertRuntimeShape, verifySymlinkClosure } from './lib/runtime.mjs'
 import { targetInfo } from './lib/targets.mjs'
+import {
+  assertWindowsInstallPathBudget,
+  collectWindowsResourceInstallPaths,
+} from './lib/windows-paths.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const stage = resolve(root, '.build/stage')
@@ -37,9 +41,10 @@ const payload = JSON.parse(readFileSync(resolve(stage, 'plugin-payload/payload.j
 const payloadIndex = JSON.parse(readFileSync(resolve(stage, 'plugin-payload/plugins/index.json'), 'utf8'))
 assertPluginPayloadIdentity({ bootstrap, payload, payloadIndex })
 const remotePlugins = readRemotePluginManifest(resolve(stage, 'remote-plugins.json'))
+const appTarget = targetInfo(bootstrap.app.target).appTarget
 const selectedRemotePlugins = selectRemotePlugins(
   remotePlugins,
-  targetInfo(bootstrap.app.target).appTarget,
+  appTarget,
   bootstrap.app.edition,
 )
 if (selectedRemotePlugins.plugins.length !== remotePlugins.plugins.length) {
@@ -59,7 +64,7 @@ for (const plugin of remotePlugins.plugins) {
 const runtime = resolve(stage, 'dsh-runtime')
 const runtimeManifest = resolve(stage, 'runtime-manifest.json')
 if (bootstrap.app.edition === 'bundled') {
-  assertRuntimeShape(runtime)
+  assertRuntimeShape(runtime, { nodeModulesLayout: 'hoisted' })
   verifySymlinkClosure(runtime)
   if (!existsSync(runtimeManifest)) throw new Error('Bundled runtime-manifest.json is missing')
   const manifest = JSON.parse(readFileSync(runtimeManifest, 'utf8'))
@@ -73,6 +78,9 @@ if (bootstrap.app.edition === 'bundled') {
   }
 } else if (existsSync(runtime) || existsSync(runtimeManifest)) {
   throw new Error('Lite resources unexpectedly contain a dsh runtime')
+}
+if (appTarget === 'windows') {
+  assertWindowsInstallPathBudget(collectWindowsResourceInstallPaths(stage))
 }
 
 console.log(`Resources verified: ${bootstrap.app.edition} / ${bootstrap.dsh.version} / ${bootstrap.app.target}`)

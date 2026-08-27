@@ -4,6 +4,7 @@ import { parseArgs, requiredArg } from './lib/args.mjs'
 import { assertPluginPayloadIdentity } from './lib/plugin-payload-contract.mjs'
 import { readRemotePluginManifest, selectRemotePlugins } from './lib/remote-plugins.mjs'
 import { targetInfo } from './lib/targets.mjs'
+import { assertWindowsInstallPathBudget } from './lib/windows-paths.mjs'
 
 // Validate the unpacked closure, including the intentional Bundled/Lite asymmetry.
 
@@ -39,20 +40,32 @@ const contains = marker => files.some(file => {
   if (/(?:^|\/)dsh-runtime\//u.test(path)) return false
   return readFileSync(file).includes(Buffer.from(marker))
 })
+const resourcePrefix = ['resources', 'r']
+  .find(prefix => find(`${prefix}/bootstrap-manifest.json`))
+if (!resourcePrefix) throw new Error('artifact is missing its packaged resource directory')
+const resourcePath = suffix => `${resourcePrefix}/${suffix}`
+const installRelativePath = file => {
+  const path = relativePath(file)
+  const marker = `${resourcePrefix}/`
+  if (path.startsWith(marker)) return path
+  const index = path.lastIndexOf(`/${marker}`)
+  return index === -1 ? null : path.slice(index + 1)
+}
 
-for (const required of [
-  'resources/licenses/DSH-App-AGPL-3.0.txt',
-  'resources/bootstrap-manifest.json',
-  'resources/plugin-payload/payload.json',
-  'resources/plugin-payload/plugins/index.json',
-  'resources/remote-plugins.json',
-  'resources/dsh-app.remote-plugins.schema.json',
-  'resources/runtime-tools/dsh-runtime-manager.mjs',
-  'resources/runtime-tools/corepack/dist/corepack.js',
+for (const suffix of [
+  'licenses/DSH-App-AGPL-3.0.txt',
+  'bootstrap-manifest.json',
+  'plugin-payload/payload.json',
+  'plugin-payload/plugins/index.json',
+  'remote-plugins.json',
+  'dsh-app.remote-plugins.schema.json',
+  'runtime-tools/dsh-runtime-manager.mjs',
+  'runtime-tools/corepack/dist/corepack.js',
 ]) {
+  const required = resourcePath(suffix)
   if (!find(required)) throw new Error(`artifact is missing ${required}`)
 }
-const appLicense = readFileSync(find('resources/licenses/DSH-App-AGPL-3.0.txt'), 'utf8')
+const appLicense = readFileSync(find(resourcePath('licenses/DSH-App-AGPL-3.0.txt')), 'utf8')
 const appLicenseMarkers = [
   'GNU AFFERO GENERAL PUBLIC LICENSE',
   '13. Remote Network Interaction',
@@ -61,17 +74,24 @@ const appLicenseMarkers = [
 if (appLicenseMarkers.some(marker => !appLicense.includes(marker))) {
   throw new Error('artifact DSH App AGPL license text is invalid')
 }
-const bootstrap = JSON.parse(readFileSync(find('resources/bootstrap-manifest.json'), 'utf8'))
-const payload = JSON.parse(readFileSync(find('resources/plugin-payload/payload.json'), 'utf8'))
-const payloadIndex = JSON.parse(readFileSync(find('resources/plugin-payload/plugins/index.json'), 'utf8'))
-const remotePlugins = readRemotePluginManifest(find('resources/remote-plugins.json'))
+const bootstrap = JSON.parse(readFileSync(find(resourcePath('bootstrap-manifest.json')), 'utf8'))
+const payload = JSON.parse(readFileSync(find(resourcePath('plugin-payload/payload.json')), 'utf8'))
+const payloadIndex = JSON.parse(readFileSync(find(resourcePath('plugin-payload/plugins/index.json')), 'utf8'))
+const remotePlugins = readRemotePluginManifest(find(resourcePath('remote-plugins.json')))
 if (bootstrap.app?.edition !== edition) {
   throw new Error(`artifact edition mismatch: expected ${edition}, found ${String(bootstrap.app?.edition)}`)
 }
 assertPluginPayloadIdentity({ bootstrap, payload, payloadIndex })
+const appTarget = targetInfo(bootstrap.app.target).appTarget
+const expectedResourcePrefix = appTarget === 'windows' ? 'r' : 'resources'
+if (resourcePrefix !== expectedResourcePrefix) {
+  throw new Error(
+    `artifact resource directory mismatch: expected ${expectedResourcePrefix}, found ${resourcePrefix}`,
+  )
+}
 const selectedRemotePlugins = selectRemotePlugins(
   remotePlugins,
-  targetInfo(bootstrap.app.target).appTarget,
+  appTarget,
   edition,
 )
 if (selectedRemotePlugins.plugins.length !== remotePlugins.plugins.length) {
@@ -82,8 +102,8 @@ for (const plugin of remotePlugins.plugins) {
     throw new Error(`remote plugin conflicts with an App-bundled plugin: ${plugin.name}`)
   }
   if (
-    find(`resources/plugin-payload/node_modules/${plugin.name}/package.json`)
-    || find(`resources/dsh-runtime/node_modules/${plugin.name}/package.json`)
+    find(resourcePath(`plugin-payload/node_modules/${plugin.name}/package.json`))
+    || find(resourcePath(`dsh-runtime/node_modules/${plugin.name}/package.json`))
   ) {
     throw new Error(`remote plugin source leaked into artifact: ${plugin.name}`)
   }
@@ -101,8 +121,8 @@ const executableNode = files.some(file => (
   ['node', 'node.exe'].includes(basename(file).toLowerCase())
   && !/(?:^|\/)dsh-runtime\//u.test(relativePath(file))
 ))
-const runtimePackage = find('resources/dsh-runtime/package.json')
-const runtimeManifestPath = find('resources/runtime-manifest.json')
+const runtimePackage = find(resourcePath('dsh-runtime/package.json'))
+const runtimeManifestPath = find(resourcePath('runtime-manifest.json'))
 
 if (edition === 'bundled') {
   if (!executableNode) throw new Error('Bundled artifact has no Node executable')
@@ -118,6 +138,9 @@ if (edition === 'bundled') {
   }
   for (const forbidden of ['lite.json', 'NODE_DOWNLOAD_FAILED', 'NODE_CHECKSUM_MISMATCH', 'lite.html']) {
     if (contains(forbidden)) throw new Error(`Bundled artifact contains Lite-only marker: ${forbidden}`)
+  }
+  if (files.some(file => /(?:^|\/)dsh-runtime\/node_modules\/\.pnpm(?:\/|$)/u.test(relativePath(file)))) {
+    throw new Error('Bundled artifact unexpectedly contains an isolated pnpm virtual store')
   }
 } else {
   if (executableNode) throw new Error('Lite artifact unexpectedly contains a Node executable')
@@ -136,7 +159,7 @@ if (!files.some(file => pathEndsWith(file, 'plugin-payload/node_modules/dsh-app-
 for (const file of files) {
   const path = relativePath(file)
   if (/dsh-runtime\/(?:apps|packages|vendor|website|\.git)\//u.test(path)
-    || /dsh-runtime\/node_modules\/\.pnpm\/[^/]+\/node_modules\/@deepseek-ai\/[^/]+\/src\//u.test(path)) {
+    || /dsh-runtime\/node_modules\/(?:[^/]+\/)*@deepseek-ai\/[^/]+\/src\//u.test(path)) {
     throw new Error(`dsh source leaked into artifact: ${path}`)
   }
   if (/dsh-runtime\/(?:pnpm-lock\.yaml|pnpm-workspace\.yaml|node_modules\/(?:\.modules\.yaml|\.pnpm\/lock\.yaml|\.pnpm-workspace-state-v1\.json))$/u.test(path)) {
@@ -145,5 +168,8 @@ for (const file of files) {
 }
 if (runtimePackage && readFileSync(runtimePackage, 'utf8').includes('file:')) {
   throw new Error('dsh runtime package.json contains a temporary file dependency')
+}
+if (appTarget === 'windows') {
+  assertWindowsInstallPathBudget(files.map(installRelativePath).filter(Boolean))
 }
 console.log(`Artifact verified: ${edition}, ${files.length} files`)

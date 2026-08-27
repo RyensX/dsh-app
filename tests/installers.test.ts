@@ -2,6 +2,12 @@ import { readFileSync } from 'node:fs'
 import { parse } from 'yaml'
 import { describe, expect, it } from 'vitest'
 import { installerFilename } from '../scripts/lib/installers.mjs'
+import {
+  assertWindowsInstallPathBudget,
+  WINDOWS_INSTALL_DIR_LENGTH_BUDGET,
+  WINDOWS_MAX_PATH_LENGTH,
+  WINDOWS_RESOURCE_DESTINATION,
+} from '../scripts/lib/windows-paths.mjs'
 
 describe('installer publication contract', () => {
   it('keeps one cross-platform release filename format', () => {
@@ -47,8 +53,31 @@ describe('installer publication contract', () => {
     const build = readFileSync('scripts/build-app.mjs', 'utf8')
     expect(build).toContain("resolve(root, '.build/installers')")
     expect(build).toContain('installerFilename({')
+    expect(build).toContain("resolve(root, 'src-tauri', installerHooks)")
     expect(build).toContain('rmSync(bundleRoot, { recursive: true, force: true })')
     expect(build).not.toContain('archiveAndRestoreInstallers')
+  })
+
+  it('budgets the complete Windows install path after flattening pnpm', () => {
+    const operation = 'getchatcompletionfieldoptionscountsv1observabilitychatcompletionfieldsfieldnameoptionscountspost.d.ts.map'
+    const isolated = `${WINDOWS_RESOURCE_DESTINATION}\\dsh-runtime\\node_modules\\.pnpm\\_${'a'.repeat(32)}\\node_modules\\@mistralai\\mistralai\\esm\\models\\operations\\${operation}`
+    const hoisted = `${WINDOWS_RESOURCE_DESTINATION}\\dsh-runtime\\node_modules\\@mistralai\\mistralai\\esm\\models\\operations\\${operation}`
+
+    expect(() => assertWindowsInstallPathBudget([isolated]))
+      .toThrow('Windows installer path exceeds 259 characters')
+    const budget = assertWindowsInstallPathBudget([hoisted])
+    expect(budget.maxPathLength).toBeLessThanOrEqual(WINDOWS_MAX_PATH_LENGTH)
+    expect(budget.installRootLength).toBe(WINDOWS_INSTALL_DIR_LENGTH_BUDGET)
+    expect(() => assertWindowsInstallPathBudget(['\\\\server\\share\\file.js']))
+      .toThrow('invalid Windows installer relative path')
+  })
+
+  it('keeps the Bundled NSIS directory guard aligned with the build budget', () => {
+    const hooks = readFileSync('src-tauri/bundled-installer-hooks.nsh', 'utf8')
+    const bundled = JSON.parse(readFileSync('src-tauri/tauri.bundled.conf.json', 'utf8'))
+    expect(hooks).toContain(`!define DSH_MAX_INSTALL_DIR_LENGTH ${WINDOWS_INSTALL_DIR_LENGTH_BUDGET}`)
+    expect(hooks).toContain('NSIS_HOOK_PREINSTALL')
+    expect(bundled.bundle.windows.nsis.installerHooks).toBe('bundled-installer-hooks.nsh')
   })
 })
 
@@ -70,6 +99,13 @@ describe('installer GitHub workflow', () => {
     }
     const unsignedMac = buildSteps.find((step: any) => step.name === 'Build unsigned macOS installer')
     expect(unsignedMac.run).toContain('--formal false')
+    const windowsTest = workflow.jobs.build.steps.find((step: any) => step.name === 'Test Windows installer')
+    expect(windowsTest.if).toBe("runner.os == 'Windows'")
+    expect(windowsTest.run).toContain('scripts/test-windows-installer.mjs')
+    const smoke = readFileSync('scripts/test-windows-installer.mjs', 'utf8')
+    expect(smoke).toContain("process.env.GITHUB_ACTIONS !== 'true'")
+    expect(smoke).toContain("'scripts/test-runtime-integration.mjs'")
+    expect(smoke).toContain("resolve(installRoot, 'r')")
     const upload = workflow.jobs.build.steps.find((step: any) => step.uses === 'actions/upload-artifact@v4')
     expect(upload.with.path).toContain('.build/installers/dsh-app-')
     expect(upload.with.path).toContain('_debug_*.')

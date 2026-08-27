@@ -178,13 +178,14 @@ async function install() {
           runtimeRoot: deployedRuntimeRoot,
           workspacePackageNames: closure.workspacePackageNames,
           forbiddenBuildRoot: buildSourceRoot,
+          nodeModulesLayout: 'isolated',
         })
         materializeProductionRuntime(deployedRuntimeRoot, runtimeRoot)
         const payload = injectPayload(pluginPayload, runtimeRoot)
         const target = { nodePlatform: probe.platform, nodeArch: probe.arch }
         const spawnHelper = findSpawnHelper(runtimeRoot, target)
         const nodePtyPackage = findNodePtyPackage(runtimeRoot)
-        assertRuntimeShape(runtimeRoot)
+        assertRuntimeShape(runtimeRoot, { nodeModulesLayout: 'isolated' })
 
         const manifest = {
           schemaVersion: 1,

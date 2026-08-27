@@ -9,7 +9,7 @@ pub fn resource_stage(app: &AppHandle) -> Result<PathBuf, LaunchError> {
     let packaged = app
         .path()
         .resource_dir()
-        .map(|path| path.join("resources"))
+        .map(|path| path.join(packaged_resource_directory()))
         .map_err(|error| {
             runtime_error(
                 "The application resource directory is unavailable",
@@ -23,6 +23,14 @@ pub fn resource_stage(app: &AppHandle) -> Result<PathBuf, LaunchError> {
         development
     };
     Ok(stage_root)
+}
+
+fn packaged_resource_directory() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "r"
+    } else {
+        "resources"
+    }
 }
 
 pub fn resolve_bootstrap(app: &AppHandle) -> Result<BootstrapManifest, LaunchError> {
@@ -127,6 +135,14 @@ mod tests {
         assert_eq!(
             contained_relative("dsh-runtime/lib/bin.js").unwrap(),
             PathBuf::from("dsh-runtime/lib/bin.js")
+        );
+    }
+
+    #[test]
+    fn keeps_the_windows_resource_container_short() {
+        assert_eq!(
+            packaged_resource_directory(),
+            if cfg!(windows) { "r" } else { "resources" }
         );
     }
 }

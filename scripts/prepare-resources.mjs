@@ -12,6 +12,10 @@ import { prepareNodeDistribution } from './lib/node-download.mjs'
 import { buildPluginPayload, injectPluginPayload } from './lib/plugins.mjs'
 import { readRemotePluginManifest, selectRemotePlugins } from './lib/remote-plugins.mjs'
 import {
+  assertWindowsInstallPathBudget,
+  collectWindowsResourceInstallPaths,
+} from './lib/windows-paths.mjs'
+import {
   completeWorkspaceRuntimeClosure,
   enableInjectedWorkspacePackages,
 } from './lib/workspace-runtime.mjs'
@@ -174,8 +178,9 @@ if (edition === 'bundled') {
   const runtimeRoot = resolve(stage, 'dsh-runtime')
   runCorepack([
     'pnpm@11.7.0',
-    '--config.shamefully-hoist=true',
-    '--config.virtual-store-dir-max-length=20',
+    // 安装包使用无虚拟存储的扁平布局，避免 NSIS 目标路径重复 node_modules 后越过 MAX_PATH。
+    '--config.node-linker=hoisted',
+    '--config.hoisting-limits=none',
     '--filter',
     '@deepseek-ai/dsh',
     'deploy',
@@ -186,11 +191,12 @@ if (edition === 'bundled') {
     runtimeRoot,
     workspacePackageNames: closure.workspacePackageNames,
     forbiddenBuildRoot: cloneRoot,
+    nodeModulesLayout: 'hoisted',
   })
   injectPluginPayload({ payloadRoot, runtimeRoot })
   const spawnHelper = findSpawnHelper(runtimeRoot, target)
   const nodePtyPackage = findNodePtyPackage(runtimeRoot)
-  assertRuntimeShape(runtimeRoot)
+  assertRuntimeShape(runtimeRoot, { nodeModulesLayout: 'hoisted' })
   const nodeAbi = run(nodeDistribution.executable, ['-p', 'process.versions.modules'], { capture: true })
   writeFileSync(resolve(stage, 'runtime-manifest.json'), `${JSON.stringify({
     schemaVersion: 1,
@@ -237,6 +243,10 @@ cpSync(
   resolve(root, 'schemas/dsh-app.remote-plugins.schema.json'),
   resolve(stage, 'dsh-app.remote-plugins.schema.json'),
 )
+if (target.appTarget === 'windows') {
+  const budget = assertWindowsInstallPathBudget(collectWindowsResourceInstallPaths(stage))
+  console.log(`Windows install path budget: ${budget.maxPathLength}/${budget.limit}`)
+}
 
 const tauriResources = resolve(root, 'src-tauri/resources')
 mkdirSync(tauriResources, { recursive: true })

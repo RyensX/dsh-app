@@ -186,6 +186,15 @@ function packagePath(runtimeRoot, packageName) {
   return resolve(runtimeRoot, 'node_modules', ...packageName.split('/'))
 }
 
+const NODE_MODULES_LAYOUTS = new Set(['hoisted', 'isolated'])
+
+function checkedNodeModulesLayout(value) {
+  if (!NODE_MODULES_LAYOUTS.has(value)) {
+    throw new Error(`invalid production node_modules layout: ${String(value)}`)
+  }
+  return value
+}
+
 function removeSourceMetadata(manifest) {
   let changed = false
   if (Array.isArray(manifest.files)) {
@@ -283,7 +292,13 @@ export function assertNoBuildPathLeak(root, forbiddenBuildRoot) {
   visit(root)
 }
 
-export function sanitizeProductionRuntime({ runtimeRoot, workspacePackageNames, forbiddenBuildRoot }) {
+export function sanitizeProductionRuntime({
+  runtimeRoot,
+  workspacePackageNames,
+  forbiddenBuildRoot,
+  nodeModulesLayout,
+}) {
+  const layout = checkedNodeModulesLayout(nodeModulesLayout)
   let packages = 0
   let sourceDirectories = 0
   let buildPathMarkers = 0
@@ -320,28 +335,35 @@ export function sanitizeProductionRuntime({ runtimeRoot, workspacePackageNames, 
   ]) {
     rmSync(resolve(runtimeRoot, metadata), { force: true })
   }
+  const virtualStore = resolve(runtimeRoot, 'node_modules/.pnpm')
+  if (layout === 'hoisted' && existsSync(virtualStore) && readdirSync(virtualStore).length === 0) {
+    // hoisted deploy 偶尔只留下一个已删除 lockfile 的空目录；产物中不保留这个 isolated 标记。
+    rmSync(virtualStore, { recursive: true, force: true })
+  }
   assertNoBuildPathLeak(runtimeRoot, forbiddenBuildRoot)
   return { packages, sourceDirectories, buildPathMarkers }
 }
 
 function assertNoUpstreamSources(runtimeRoot) {
-  const virtualStore = resolve(runtimeRoot, 'node_modules/.pnpm')
-  if (!existsSync(virtualStore)) throw new Error('pnpm virtual store is missing from the production runtime')
+  const nodeModules = resolve(runtimeRoot, 'node_modules')
+  if (!existsSync(nodeModules)) throw new Error('production runtime node_modules is missing')
   const visit = directory => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue
       const path = resolve(directory, entry.name)
-      const relativePath = relative(virtualStore, path).split(sep).join('/')
-      if (/^[^/]+\/node_modules\/@deepseek-ai\/[^/]+\/src$/u.test(relativePath)) {
+      const relativePath = relative(nodeModules, path).split(sep).join('/')
+      // 同时覆盖 hoisted 顶层包和 isolated 虚拟存储里的 workspace 包。
+      if (/(?:^|\/)@deepseek-ai\/[^/]+\/src$/u.test(relativePath)) {
         throw new Error(`upstream source directory leaked into runtime: ${relativePath}`)
       }
       visit(path)
     }
   }
-  visit(virtualStore)
+  visit(nodeModules)
 }
 
-export function assertRuntimeShape(runtimeRoot) {
+export function assertRuntimeShape(runtimeRoot, { nodeModulesLayout } = {}) {
+  const layout = checkedNodeModulesLayout(nodeModulesLayout)
   const entry = resolve(runtimeRoot, 'lib/bin.js')
   if (!existsSync(entry)) throw new Error(`dsh runtime entry missing: ${entry}`)
   for (const forbidden of ['.git', 'apps', 'packages', 'vendor', 'website']) {
@@ -358,6 +380,13 @@ export function assertRuntimeShape(runtimeRoot) {
   }
   if (readFileSync(resolve(runtimeRoot, 'package.json'), 'utf8').includes('file:')) {
     throw new Error('temporary file dependency leaked into runtime package.json')
+  }
+  const virtualStore = resolve(runtimeRoot, 'node_modules/.pnpm')
+  if (layout === 'hoisted' && existsSync(virtualStore)) {
+    throw new Error('hoisted production runtime unexpectedly contains node_modules/.pnpm')
+  }
+  if (layout === 'isolated' && !existsSync(virtualStore)) {
+    throw new Error('isolated production runtime is missing node_modules/.pnpm')
   }
   assertNoUpstreamSources(runtimeRoot)
   verifySymlinkClosure(runtimeRoot)

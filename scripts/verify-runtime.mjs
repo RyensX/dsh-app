@@ -5,7 +5,7 @@ import { assertRuntimeShape, verifySymlinkClosure } from './lib/runtime.mjs'
 const root = resolve(import.meta.dirname, '..')
 const stage = resolve(root, '.build/stage')
 const runtime = resolve(stage, 'dsh-runtime')
-assertRuntimeShape(runtime)
+assertRuntimeShape(runtime, { nodeModulesLayout: 'hoisted' })
 verifySymlinkClosure(runtime)
 const manifestPath = resolve(stage, 'runtime-manifest.json')
 if (!existsSync(manifestPath)) throw new Error('runtime-manifest.json is missing')

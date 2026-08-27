@@ -1,7 +1,11 @@
-import { existsSync, linkSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { materializeProductionRuntime, sanitizeProductionRuntime } from '../scripts/lib/runtime.mjs'
+import {
+  assertRuntimeShape,
+  materializeProductionRuntime,
+  sanitizeProductionRuntime,
+} from '../scripts/lib/runtime.mjs'
 
 describe('production runtime layout', () => {
   it('removes upstream sources and temporary deploy metadata', () => {
@@ -38,6 +42,7 @@ describe('production runtime layout', () => {
       runtimeRoot: runtime,
       workspacePackageNames: ['@deepseek-ai/example'],
       forbiddenBuildRoot: buildRoot,
+      nodeModulesLayout: 'isolated',
     })).toEqual({ packages: 1, sourceDirectories: 1, buildPathMarkers: 2 })
 
     const deployed = JSON.parse(readFileSync(join(runtime, 'package.json'), 'utf8'))
@@ -75,5 +80,44 @@ describe('production runtime layout', () => {
     writeFileSync(workspaceClient, 'export const version = "new"\n')
     expect(readFileSync(deployedClient, 'utf8')).toBe('export const version = "new"\n')
     expect(readFileSync(publishedClient, 'utf8')).toBe('export const version = "old"\n')
+  })
+
+  it('keeps Bundled hoisted and Managed isolated layouts mutually exclusive', () => {
+    const root = join(process.env.TMPDIR ?? '/tmp', `dsh-app-runtime-layout-${process.pid}-${Math.random()}`)
+    const hoisted = join(root, 'hoisted')
+    const isolated = join(root, 'isolated')
+    try {
+      for (const runtime of [hoisted, isolated]) {
+        mkdirSync(join(runtime, 'lib'), { recursive: true })
+        mkdirSync(join(runtime, 'node_modules'), { recursive: true })
+        writeFileSync(join(runtime, 'lib/bin.js'), 'export {}\n')
+        writeFileSync(join(runtime, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh' }))
+      }
+      mkdirSync(join(isolated, 'node_modules/.pnpm'), { recursive: true })
+
+      expect(() => assertRuntimeShape(hoisted, { nodeModulesLayout: 'hoisted' })).not.toThrow()
+      expect(() => assertRuntimeShape(isolated, { nodeModulesLayout: 'isolated' })).not.toThrow()
+      expect(() => assertRuntimeShape(hoisted, { nodeModulesLayout: 'isolated' }))
+        .toThrow('isolated production runtime is missing node_modules/.pnpm')
+      expect(() => assertRuntimeShape(isolated, { nodeModulesLayout: 'hoisted' }))
+        .toThrow('hoisted production runtime unexpectedly contains node_modules/.pnpm')
+      expect(() => assertRuntimeShape(hoisted)).toThrow('invalid production node_modules layout')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects upstream source directories in either node_modules layout', () => {
+    const runtime = join(process.env.TMPDIR ?? '/tmp', `dsh-app-runtime-source-${process.pid}-${Math.random()}`)
+    try {
+      mkdirSync(join(runtime, 'lib'), { recursive: true })
+      mkdirSync(join(runtime, 'node_modules/@deepseek-ai/example/src'), { recursive: true })
+      writeFileSync(join(runtime, 'lib/bin.js'), 'export {}\n')
+      writeFileSync(join(runtime, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh' }))
+      expect(() => assertRuntimeShape(runtime, { nodeModulesLayout: 'hoisted' }))
+        .toThrow('upstream source directory leaked into runtime')
+    } finally {
+      rmSync(runtime, { recursive: true, force: true })
+    }
   })
 })

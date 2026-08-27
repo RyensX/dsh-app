@@ -16,6 +16,13 @@ app plugins, and packages `dsh-runtime/`. Lite packages no dsh files. Both
 editions package the target-selected plugin payload, a small Corepack runner,
 and the self-contained source runtime manager.
 
+The Bundled production closure uses pnpm's hoisted `node_modules` layout so an
+installer never publishes the repeated `.pnpm/<key>/node_modules` path. Managed
+runtime updates keep the isolated pnpm layout and their existing builder
+version. On Windows, packaged resources use the short `r/` container instead
+of `resources/`; manifest entries remain relative to the resource stage and do
+not change between platforms.
+
 Plugin payload schema v2 keeps the build-selection `platform` (`macos` or
 `windows`) separate from the runtime identity `targetTriple`. Resource and
 artifact verification require the payload edition, target triple, platform,

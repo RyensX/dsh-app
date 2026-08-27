@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -7,10 +7,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 const fixtures: string[] = []
 const verifier = resolve('scripts/verify-artifact.mjs')
 
-function fixture(edition: 'bundled' | 'lite'): string {
+function fixture(
+  edition: 'bundled' | 'lite',
+  target = 'aarch64-apple-darwin',
+): string {
   const root = mkdtempSync(join(tmpdir(), 'dsh-app-artifact-'))
   fixtures.push(root)
-  const resources = join(root, 'DSH App.app/Contents/Resources/resources')
+  const platform = target.includes('windows') ? 'windows' : 'macos'
+  const resourceDirectory = platform === 'windows' ? 'r' : 'resources'
+  const resources = join(root, 'DSH App.app/Contents/Resources', resourceDirectory)
   const executable = join(root, 'DSH App.app/Contents/MacOS')
   mkdirSync(join(resources, 'plugin-payload/node_modules/dsh-app-runtime'), { recursive: true })
   mkdirSync(join(resources, 'plugin-payload/plugins'), { recursive: true })
@@ -24,7 +29,7 @@ function fixture(edition: 'bundled' | 'lite'): string {
   const pluginDigest = 'c'.repeat(64)
   writeFileSync(join(resources, 'bootstrap-manifest.json'), JSON.stringify({
     schemaVersion: 1,
-    app: { edition, target: 'aarch64-apple-darwin' },
+    app: { edition, target },
     dsh: { commit: 'a'.repeat(40), tag: 'dsh-v1.0.0', version: '1.0.0' },
     node: { version: '24.19.0', sha256: 'b'.repeat(64) },
     pluginDigest,
@@ -32,8 +37,8 @@ function fixture(edition: 'bundled' | 'lite'): string {
   writeFileSync(join(resources, 'plugin-payload/payload.json'), JSON.stringify({
     schemaVersion: 2,
     edition,
-    platform: 'macos',
-    targetTriple: 'aarch64-apple-darwin',
+    platform,
+    targetTriple: target,
     digest: pluginDigest,
     plugins,
   }))
@@ -68,7 +73,7 @@ function fixture(edition: 'bundled' | 'lite'): string {
     mkdirSync(runtime, { recursive: true })
     writeFileSync(join(runtime, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh' }))
     writeFileSync(join(resources, 'runtime-manifest.json'), JSON.stringify({
-      app: { edition: 'bundled', target: 'aarch64-apple-darwin' },
+      app: { edition: 'bundled', target },
       dsh: { commit: 'a'.repeat(40) },
       pluginDigest,
     }))
@@ -156,5 +161,57 @@ describe('unpacked artifact verification', () => {
     const result = verify('bundled', root)
     expect(result.status).not.toBe(0)
     expect(result.stderr).toContain('remote plugin source leaked into artifact')
+  })
+
+  it('rejects isolated virtual-store files in a Bundled artifact', () => {
+    const root = fixture('bundled')
+    const leaked = join(
+      root,
+      'DSH App.app/Contents/Resources/resources/dsh-runtime/node_modules/.pnpm/demo/node_modules/demo',
+    )
+    mkdirSync(leaked, { recursive: true })
+    writeFileSync(join(leaked, 'index.js'), 'export {}\n')
+
+    const result = verify('bundled', root)
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('isolated pnpm virtual store')
+  })
+
+  it('rejects upstream sources in a hoisted Bundled artifact', () => {
+    const root = fixture('bundled')
+    const leaked = join(
+      root,
+      'DSH App.app/Contents/Resources/resources/dsh-runtime/node_modules/@deepseek-ai/example/src',
+    )
+    mkdirSync(leaked, { recursive: true })
+    writeFileSync(join(leaked, 'index.ts'), 'export {}\n')
+
+    const result = verify('bundled', root)
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('dsh source leaked into artifact')
+  })
+
+  it('rejects Windows artifacts that exceed the default install path budget', () => {
+    const root = fixture('bundled', 'x86_64-pc-windows-msvc')
+    const directory = join(
+      root,
+      'DSH App.app/Contents/Resources/r/dsh-runtime/node_modules/demo',
+    )
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(join(directory, `${'x'.repeat(190)}.js`), 'export {}\n')
+
+    const result = verify('bundled', root)
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('Windows installer path exceeds 259 characters')
+  })
+
+  it('requires the short resource container in Windows artifacts', () => {
+    const root = fixture('lite', 'x86_64-pc-windows-msvc')
+    const contents = join(root, 'DSH App.app/Contents/Resources')
+    renameSync(join(contents, 'r'), join(contents, 'resources'))
+
+    const result = verify('lite', root)
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('artifact resource directory mismatch')
   })
 })

@@ -120,6 +120,13 @@ jobs:
           )
           if ($formal -eq 'true') { $arguments += @('--signing-config', '.build/windows-signing.json') }
           node @arguments
+      - name: Test Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem .build/installers -Filter 'dsh-app-${{ matrix.edition }}-*-windows-${{ matrix.arch }}_debug_*.exe' | Select-Object -First 1
+          if (!$installer) { throw 'Built Windows installer was not found' }
+          node scripts/test-windows-installer.mjs --edition '${{ matrix.edition }}' --path $installer.FullName
       - uses: actions/upload-artifact@v4
         with:
           name: dsh-app-${{ matrix.edition }}-${{ matrix.platform }}-${{ matrix.arch }}

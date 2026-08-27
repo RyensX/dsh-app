@@ -23,6 +23,11 @@
     }
   },
   "bundle": {
-    "externalBin": ["binaries/node"]
+    "externalBin": ["binaries/node"],
+    "windows": {
+      "nsis": {
+        "installerHooks": "bundled-installer-hooks.nsh"
+      }
+    }
   }
 }

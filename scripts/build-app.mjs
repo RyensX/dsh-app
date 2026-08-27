@@ -45,13 +45,19 @@ if (edition === 'bundled') {
 
 const config = JSON.parse(readFileSync(resolve(root, `src-tauri/tauri.${edition}.conf.json`), 'utf8'))
 if (signingOverlay) deepMerge(config, signingOverlay)
+const installerHooks = config.bundle?.windows?.nsis?.installerHooks
+if (target.appTarget === 'windows' && typeof installerHooks === 'string') {
+  config.bundle.windows.nsis.installerHooks = resolve(root, 'src-tauri', installerHooks)
+}
 const resourcesRoot = resolve(root, 'src-tauri/resources')
 const compactResourcesRoot = resolve(root, '.build/r')
 // Tauri/NSIS 使用资源的绝对源路径，统一缩短打包输入路径以避免 Windows MAX_PATH。
 rmSync(compactResourcesRoot, { recursive: true, force: true })
 renameSync(resourcesRoot, compactResourcesRoot)
 config.bundle ??= {}
-config.bundle.resources = { [compactResourcesRoot]: 'resources' }
+// Windows 再缩短一层安装目标路径；macOS 保持既有 Resources/resources 契约。
+const resourceDestination = target.appTarget === 'windows' ? 'r' : 'resources'
+config.bundle.resources = { [compactResourcesRoot]: resourceDestination }
 if (target.appTarget === 'macos' && !formal) {
   // 无 Apple 证书的 pre-release 使用完整 ad-hoc 签名，避免 Gatekeeper 误报应用已损坏。
   config.bundle.macOS ??= {}

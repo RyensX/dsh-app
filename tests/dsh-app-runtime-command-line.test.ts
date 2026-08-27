@@ -62,7 +62,7 @@ describe('Dsh runtime command-line action', () => {
   it('writes a PowerShell bootstrap and clears an unavailable helper', () => {
     const launch = prepareCommandLine('win32', temporaryHome(), {
       node: 'C:\\Program Files\\DSH App\\node.exe',
-      entry: 'C:\\Program Files\\DSH App\\resources\\dsh-runtime\\lib\\bin.js',
+      entry: 'C:\\Program Files\\DSH App\\r\\dsh-runtime\\lib\\bin.js',
       dshHome: 'C:\\Users\\100% User\\AppData\\Roaming\\dsh-app\\profile',
     })
     const command = readFileSync(launch.commandPath, 'utf8')

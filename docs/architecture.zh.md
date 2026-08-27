@@ -8,6 +8,8 @@
 
 Bundled 还会创建一个分离的本地 clone，构建上游代码，部署生产闭包，删除源码和临时元数据，注入选定的 App 插件，并打包 `dsh-runtime/`。Lite 不会打包 dsh 文件。两个版本都会打包目标所选的插件载荷、一个小型 Corepack runner，以及自包含的源码运行时管理器。
 
+Bundled 生产闭包使用 pnpm 的 hoisted `node_modules` 布局，避免安装包发布重复的 `.pnpm/<key>/node_modules` 路径。Managed runtime 更新继续使用 isolated pnpm 布局及原有 builder version。Windows 将打包资源放在较短的 `r/` 容器而不是 `resources/`；manifest 入口仍相对于资源 stage，因此跨平台保持不变。
+
 插件载荷 schema v2 将构建选择使用的 `platform`（`macos` 或 `windows`）与运行时身份使用的 `targetTriple` 分开。资源和产物验证要求载荷的版本、target triple、platform、digest 和插件索引都与 `bootstrap-manifest.json` 匹配；因此不匹配的载荷会在构建阶段失败，而不是等到已安装 App 下次启动时才失败。
 
 固定基线保持一致：
