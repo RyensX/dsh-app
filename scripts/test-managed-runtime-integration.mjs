@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { run } from './lib/process.mjs'
+import { managedRuntimeInstallArgs } from './lib/runtime-manager-command.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const stage = resolve(root, '.build/stage')
@@ -14,17 +15,15 @@ const node = resolve(
 const temporary = mkdtempSync(resolve(tmpdir(), 'dsh-app-managed-runtime-'))
 
 try {
-  const managerArgs = [
-    resolve(stage, 'runtime-tools/dsh-runtime-manager.mjs'),
-    'install',
-    '--bootstrap', resolve(stage, 'bootstrap-manifest.json'),
-    '--user-runtime', temporary,
-    '--plugin-payload', resolve(stage, 'plugin-payload'),
-    '--corepack', resolve(stage, 'runtime-tools/corepack/dist/corepack.js'),
-    '--commit', bootstrap.dsh.commit,
-    '--tag', bootstrap.dsh.tag,
-    '--activation', 'current',
-  ]
+  const managerArgs = managedRuntimeInstallArgs({
+    runtimeManager: resolve(stage, 'runtime-tools/dsh-runtime-manager.mjs'),
+    bootstrapPath: resolve(stage, 'bootstrap-manifest.json'),
+    userRuntime: temporary,
+    pluginPayload: resolve(stage, 'plugin-payload'),
+    corepack: resolve(stage, 'runtime-tools/corepack/dist/corepack.js'),
+    commit: bootstrap.dsh.commit,
+    tag: bootstrap.dsh.tag,
+  })
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
       run(node, managerArgs, {
