@@ -58,6 +58,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       FORMAL_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.formal || false }}
+      PRE_RELEASE_SUFFIX: debug
+      PRE_RELEASE_COMMIT: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -92,7 +94,7 @@ jobs:
           @{ bundle = @{ windows = @{ certificateThumbprint = $certificate.Thumbprint; digestAlgorithm = 'sha256'; timestampUrl = $env:WINDOWS_TIMESTAMP_URL } } } | ConvertTo-Json -Depth 6 | Set-Content .build/windows-signing.json
       - name: Build unsigned macOS installer
         if: runner.os == 'macOS' && env.FORMAL_BUILD != 'true'
-        run: node scripts/build-app.mjs --edition ${{ matrix.edition }} --target ${{ matrix.target }} --formal false
+        run: node scripts/build-app.mjs --edition ${{ matrix.edition }} --target ${{ matrix.target }} --formal false --artifact-suffix "$PRE_RELEASE_SUFFIX" --artifact-commit "$PRE_RELEASE_COMMIT"
       - name: Build signed macOS installer
         if: runner.os == 'macOS' && env.FORMAL_BUILD == 'true'
         env:
@@ -102,19 +104,26 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: node scripts/build-app.mjs --edition ${{ matrix.edition }} --target ${{ matrix.target }} --formal true
+        run: node scripts/build-app.mjs --edition ${{ matrix.edition }} --target ${{ matrix.target }} --formal true --artifact-suffix "$PRE_RELEASE_SUFFIX" --artifact-commit "$PRE_RELEASE_COMMIT"
       - name: Build Windows installer
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $formal = $env:FORMAL_BUILD.ToLowerInvariant()
-          $arguments = @('scripts/build-app.mjs', '--edition', '${{ matrix.edition }}', '--target', '${{ matrix.target }}', '--formal', $formal)
+          $arguments = @(
+            'scripts/build-app.mjs',
+            '--edition', '${{ matrix.edition }}',
+            '--target', '${{ matrix.target }}',
+            '--formal', $formal,
+            '--artifact-suffix', $env:PRE_RELEASE_SUFFIX,
+            '--artifact-commit', $env:PRE_RELEASE_COMMIT
+          )
           if ($formal -eq 'true') { $arguments += @('--signing-config', '.build/windows-signing.json') }
           node @arguments
       - uses: actions/upload-artifact@v4
         with:
           name: dsh-app-${{ matrix.edition }}-${{ matrix.platform }}-${{ matrix.arch }}
-          path: .build/installers/dsh-app-${{ matrix.edition }}-*-${{ matrix.platform }}-${{ matrix.arch }}.${{ matrix.extension }}
+          path: .build/installers/dsh-app-${{ matrix.edition }}-*-${{ matrix.platform }}-${{ matrix.arch }}_debug_*.${{ matrix.extension }}
           if-no-files-found: error
           include-hidden-files: true
 

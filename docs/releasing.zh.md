@@ -23,10 +23,18 @@ node scripts/build-app.mjs --edition <bundled|lite> \
 dsh-app-<bundled|lite>-<version>-<macos|windows>-<arm64|x64>.<dmg|exe>
 ```
 
+滚动 pre-release 构建会在扩展名前追加 `debug` 后缀和 7 位 commit hash：
+
+```text
+dsh-app-<bundled|lite>-<version>-<macos|windows>-<arm64|x64>_debug_<commit>.<dmg|exe>
+```
+
+该限定符通过 `--artifact-suffix debug --artifact-commit <commit>` 显式启用；两个参数必须同时提供。未提供时仍生成上述正式产物名称。
+
 目标专用的 Tauri `release/bundle` 目录是临时目录，在完成安装包验证并发布后会被删除。应用标识和用户目录保持不变。
 DMG 组装始终使用 CI 安全模式，确保打包期间不会因为 Finder 窗口或交互式本地桌面而持有临时读写镜像。
 
-`.github/workflows/build-installers.yml` 会在每次 push 时运行六个原生目标/版本任务，并且只从 `.build/installers/` 上传标准化文件。Push 构建不会签名。手动执行 `workflow_dispatch` 时，如果所有签名和公证密钥都可用，可以将 `formal: true` 打开。
+`.github/workflows/build-installers.yml` 会在每次 push 时运行六个原生目标/版本任务，以当前 GitHub commit 生成带 `_debug_<commit>` 限定符的文件，并且只从 `.build/installers/` 上传这些标准化文件。Push 构建不会签名。手动执行 `workflow_dispatch` 时，如果所有签名和公证密钥都可用，可以将 `formal: true` 打开。
 
 ## 正式 macOS 构建
 

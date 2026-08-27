@@ -27,6 +27,17 @@ directory using this format:
 dsh-app-<bundled|lite>-<version>-<macos|windows>-<arm64|x64>.<dmg|exe>
 ```
 
+Rolling pre-release builds append a `debug` suffix and the seven-character
+commit hash before the extension:
+
+```text
+dsh-app-<bundled|lite>-<version>-<macos|windows>-<arm64|x64>_debug_<commit>.<dmg|exe>
+```
+
+This qualifier is enabled explicitly with
+`--artifact-suffix debug --artifact-commit <commit>`; both arguments must be
+provided together. Omitting them preserves the formal release filename above.
+
 The target-specific Tauri `release/bundle` directory is temporary and is
 removed after the verified installer is published. Application identity and
 user directories remain equal.
@@ -34,7 +45,8 @@ DMG assembly always uses CI-safe mode so Finder windows or an interactive local
 desktop cannot hold the temporary read/write image open during packaging.
 
 `.github/workflows/build-installers.yml` runs the six native target/edition
-jobs on every push and uploads only the standardized file from
+jobs on every push, generates the `_debug_<commit>` qualifier from the current
+GitHub commit, and uploads only those standardized files from
 `.build/installers/`. Push builds are unsigned. A manual `workflow_dispatch`
 may set `formal: true` when all signing and notarization secrets are available.
 

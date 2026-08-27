@@ -17,6 +17,15 @@ const version = String(JSON.parse(readFileSync(resolve(root, 'package.json'), 'u
 const formal = parseFormal(args.get('formal'))
 const signingConfig = args.get('signing-config')
 const signingOverlay = readSigningOverlay(signingConfig)
+// 提前生成并校验最终文件名，避免无效的 pre-release 参数在耗时构建结束后才报错。
+const publishedFilename = installerFilename({
+  edition,
+  version,
+  platform: target.appTarget,
+  arch: target.nodeArch,
+  suffix: args.get('artifact-suffix'),
+  commit: args.get('artifact-commit'),
+})
 validateFormalSigning({
   formal,
   appTarget: target.appTarget,
@@ -140,13 +149,7 @@ function publishInstaller(builtArtifact) {
   for (const entry of readdirSync(installersRoot, { withFileTypes: true })) {
     if (entry.isDirectory()) rmSync(resolve(installersRoot, entry.name), { recursive: true, force: true })
   }
-  const filename = installerFilename({
-    edition,
-    version,
-    platform: target.appTarget,
-    arch: target.nodeArch,
-  })
-  const destination = resolve(installersRoot, filename)
+  const destination = resolve(installersRoot, publishedFilename)
   const temporary = `${destination}.tmp-${process.pid}`
   rmSync(temporary, { force: true })
   copyFileSync(builtArtifact, temporary)
