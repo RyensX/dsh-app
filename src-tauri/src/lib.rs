@@ -71,6 +71,19 @@ pub fn run() {
             Ok(())
         });
 
+    #[cfg(target_os = "macos")]
+    let builder = builder.on_page_load(|webview, payload| {
+        if webview.label() != "main"
+            || payload.url().host_str() != Some("127.0.0.1")
+            || !matches!(payload.event(), tauri::webview::PageLoadEvent::Finished)
+        {
+            return;
+        }
+        if let Some(window) = webview.app_handle().get_webview_window("main") {
+            macos_window::publish(&window);
+        }
+    });
+
     #[cfg(all(feature = "lite", not(feature = "bundled")))]
     let builder =
         builder

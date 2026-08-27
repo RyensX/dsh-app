@@ -55,4 +55,4 @@ windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSEvent", "NSResponder", "NSWindow"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSButton", "NSControl", "NSEvent", "NSResponder", "NSView", "NSWindow"] }
