@@ -403,7 +403,7 @@ jobs:
             current_release_id="$(release_id_for_tag "$RELEASE_TAG" 2> /dev/null || true)"
             if [[ "$current_release_id" == "$staging_release_id" ]]; then
               ensure_tag_ref "$staging_tag" "$GITHUB_SHA" || true
-              gh release edit "$RELEASE_TAG" --tag "$staging_tag" --draft=true \
+              gh release edit "$RELEASE_TAG" --tag "$staging_tag" --title "$staging_tag" --draft=true \
                 || echo "::error::Failed to return the new release to ${staging_tag}."
             fi
 
@@ -468,6 +468,30 @@ jobs:
               echo "::warning::Failed to remove backup release ${backup_tag}; the new pre-release is already active."
             fi
           fi
+
+          # 新版本已验证可用，此时可以安全清理以前失败运行遗留的 staging 草稿。
+          stale_staging_releases="$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" | jq -sc 'add')"
+          while IFS=$'\t' read -r stale_release_id stale_tag; do
+            if [[ -z "$stale_release_id" || -z "$stale_tag" ]]; then
+              continue
+            fi
+            if gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${stale_release_id}"; then
+              delete_tag_ref_if_exists "$stale_tag" \
+                || echo "::warning::Failed to remove stale staging tag ${stale_tag}."
+            else
+              echo "::warning::Failed to remove stale staging draft ${stale_tag}."
+            fi
+          done < <(jq -r \
+            --arg prefix "${RELEASE_TAG}-staging-" \
+            --arg current_release_id "$staging_release_id" \
+            '.[] | select(
+              .draft == true
+              and (.tag_name | startswith($prefix))
+              and (.id | tostring) != $current_release_id
+            ) | [.id, .tag_name] | @tsv' \
+            <<< "$stale_staging_releases")
+
           delete_tag_ref_if_exists "$staging_tag" \
             || echo "::warning::Failed to remove staging tag ${staging_tag}."
           echo "Pre-release updated safely with ${expected_asset_count} installer asset(s)."
