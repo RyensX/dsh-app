@@ -447,12 +447,14 @@ jobs:
           promoted_release_id="$(release_id_for_tag "$RELEASE_TAG" || true)"
           promoted_release_json="$(release_json_for_tag "$RELEASE_TAG" || true)"
           promoted_tag_sha="$(gh api "$(tag_ref_endpoint "$RELEASE_TAG")" --jq '.object.sha' 2> /dev/null || true)"
+          promoted_draft="$(jq -r '.draft' <<< "$promoted_release_json" 2> /dev/null || true)"
+          promoted_prerelease="$(jq -r '.prerelease' <<< "$promoted_release_json" 2> /dev/null || true)"
           if [[ "$promoted_release_id" != "$staging_release_id" \
-            || "$(jq -r '.draft // true' <<< "$promoted_release_json")" != 'false' \
-            || "$(jq -r '.prerelease // false' <<< "$promoted_release_json")" != 'true' \
+            || "$promoted_draft" != 'false' \
+            || "$promoted_prerelease" != 'true' \
             || "$promoted_tag_sha" != "$GITHUB_SHA" ]] \
             || ! verify_release_assets "$staging_release_id"; then
-            echo '::error::Promoted pre-release verification failed.'
+            echo "::error::Promoted pre-release verification failed: release_id=${promoted_release_id:-missing}, draft=${promoted_draft:-missing}, prerelease=${promoted_prerelease:-missing}, tag_sha=${promoted_tag_sha:-missing}."
             rollback_release_switch
             exit 1
           fi
