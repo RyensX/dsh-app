@@ -250,9 +250,6 @@ jobs:
               "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA"
           } > "$notes_file"
 
-          staging_tag="${RELEASE_TAG}-staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          backup_tag="${RELEASE_TAG}-backup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-
           tag_ref_endpoint() {
             printf 'repos/%s/git/ref/tags/%s' "$GITHUB_REPOSITORY" "$1"
           }
@@ -282,11 +279,7 @@ jobs:
 
           release_json_for_tag() {
             local tag="$1"
-            local releases_json
-            releases_json="$(gh api --paginate \
-              "repos/${GITHUB_REPOSITORY}/releases?per_page=100" | jq -sc 'add')"
-            jq -c --arg tag "$tag" '[.[] | select(.tag_name == $tag)][0] // empty' \
-              <<< "$releases_json"
+            gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" 2> /dev/null || true
           }
 
           wait_for_release_json() {
@@ -305,19 +298,10 @@ jobs:
             return 1
           }
 
-          release_id_for_tag() {
-            wait_for_release_json "$1" | jq -r '.id'
-          }
-
-          verify_release_assets() {
+          verify_current_assets() {
             local release_id="$1"
-            local release_assets_json asset_count asset asset_name asset_size remote_row remote_state remote_size
+            local release_assets_json asset asset_name asset_size remote_row remote_state remote_size
             release_assets_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100")"
-            asset_count="$(jq 'length' <<< "$release_assets_json")"
-            if (( asset_count != expected_asset_count )); then
-              echo "::error::Expected ${expected_asset_count} release assets, found ${asset_count}."
-              return 1
-            fi
             for asset in "${assets[@]}"; do
               asset_name="$(basename "$asset")"
               asset_size="${current_asset_sizes[$asset_name]}"
@@ -336,30 +320,6 @@ jobs:
             done
           }
 
-          # 单次命令建立草稿并上传所有产物，此阶段不修改正式 Release。
-          gh release create "$staging_tag" "${assets[@]}" \
-            --target "$GITHUB_SHA" \
-            --title "$staging_tag" \
-            --notes-file "$notes_file" \
-            --draft
-          staging_release_id="$(release_id_for_tag "$staging_tag")"
-          verify_release_assets "$staging_release_id"
-          ensure_tag_ref "$staging_tag" "$GITHUB_SHA"
-
-          old_release_exists=false
-          old_release_id=''
-          old_release_target=''
-          old_assets_fingerprint=''
-          old_release_json="$(release_json_for_tag "$RELEASE_TAG")"
-          if [[ -n "$old_release_json" ]]; then
-            old_release_exists=true
-            old_release_id="$(jq -r '.id' <<< "$old_release_json")"
-            old_release_target="$(jq -r '.target_commitish' <<< "$old_release_json")"
-            old_assets_fingerprint="$(gh api \
-              "repos/${GITHUB_REPOSITORY}/releases/${old_release_id}/assets?per_page=100" \
-              | jq -Sc 'sort_by(.name) | map({name, size, state})')"
-          fi
-
           old_tag_exists=false
           old_tag_sha=''
           if old_tag_json="$(gh api "$(tag_ref_endpoint "$RELEASE_TAG")" 2> /dev/null)"; then
@@ -367,131 +327,138 @@ jobs:
             old_tag_sha="$(jq -r '.object.sha' <<< "$old_tag_json")"
           fi
 
-          backup_ready=false
-          backup_sha=''
-          if [[ "$old_release_exists" == 'true' ]]; then
-            if [[ "$old_tag_exists" == 'true' ]]; then
-              backup_sha="$old_tag_sha"
-            else
-              backup_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${old_release_target}" --jq '.sha')"
-            fi
-            ensure_tag_ref "$backup_tag" "$backup_sha"
-            if ! gh release edit "$RELEASE_TAG" --tag "$backup_tag"; then
-              delete_tag_ref_if_exists "$backup_tag" || true
-              exit 1
-            fi
-            backup_ready=true
-            backup_release_id="$(release_id_for_tag "$backup_tag")"
-            backup_assets_fingerprint="$(gh api \
-              "repos/${GITHUB_REPOSITORY}/releases/${backup_release_id}/assets?per_page=100" \
-              | jq -Sc 'sort_by(.name) | map({name, size, state})')"
-            if [[ "$backup_release_id" != "$old_release_id" \
-              || "$backup_assets_fingerprint" != "$old_assets_fingerprint" ]]; then
-              echo '::error::Backup release verification failed before switching.'
-              gh release edit "$backup_tag" --tag "$RELEASE_TAG" || true
-              delete_tag_ref_if_exists "$backup_tag" || true
-              if [[ "$old_tag_exists" != 'true' ]]; then
-                delete_tag_ref_if_exists "$RELEASE_TAG" || true
-              fi
-              exit 1
-            fi
-          fi
-
-          rollback_release_switch() {
-            echo 'Release switch failed; restoring the previous release state.'
-            local current_release_id=''
-            current_release_id="$(release_id_for_tag "$RELEASE_TAG" 2> /dev/null || true)"
-            if [[ "$current_release_id" == "$staging_release_id" ]]; then
-              ensure_tag_ref "$staging_tag" "$GITHUB_SHA" || true
-              gh release edit "$RELEASE_TAG" --tag "$staging_tag" --title "$staging_tag" --draft=true \
-                || echo "::error::Failed to return the new release to ${staging_tag}."
-            fi
-
-            if [[ "$old_tag_exists" == 'true' ]]; then
-              ensure_tag_ref "$RELEASE_TAG" "$old_tag_sha" \
-                || echo "::error::Failed to restore ${RELEASE_TAG} to ${old_tag_sha}."
-            else
-              delete_tag_ref_if_exists "$RELEASE_TAG" \
-                || echo "::error::Failed to restore the missing ${RELEASE_TAG} tag state."
-            fi
-
-            if [[ "$backup_ready" == 'true' ]]; then
-              ensure_tag_ref "$backup_tag" "$backup_sha" || true
-              if gh release edit "$backup_tag" --tag "$RELEASE_TAG"; then
-                delete_tag_ref_if_exists "$backup_tag" || true
+          release_json="$(release_json_for_tag "$RELEASE_TAG")"
+          if [[ -z "$release_json" ]]; then
+            # gh 会先在内部草稿中上传全部产物，成功后才发布首次预发布版本。
+            gh release create "$RELEASE_TAG" "${assets[@]}" \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_TAG" \
+              --notes-file "$notes_file" \
+              --prerelease \
+              --latest=false
+            release_json="$(wait_for_release_json "$RELEASE_TAG")"
+          else
+            # 新提交的文件名包含 commit，先与旧产物共存上传；此阶段不移动正式 tag。
+            release_id="$(jq -r '.id' <<< "$release_json")"
+            release_assets_json="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100")"
+            pending_assets=()
+            for asset in "${assets[@]}"; do
+              asset_name="$(basename "$asset")"
+              asset_size="${current_asset_sizes[$asset_name]}"
+              remote_matches="$(jq -c --arg name "$asset_name" \
+                '[.[] | select(.name == $name)]' <<< "$release_assets_json")"
+              remote_count="$(jq 'length' <<< "$remote_matches")"
+              if (( remote_count == 0 )); then
+                pending_assets+=("$asset")
+              elif (( remote_count == 1 )) \
+                && [[ "$(jq -r '.[0].state' <<< "$remote_matches")" == 'uploaded' ]] \
+                && [[ "$(jq -r '.[0].size' <<< "$remote_matches")" == "$asset_size" ]]; then
+                echo "Installer already uploaded and verified: ${asset_name}"
               else
-                echo "::error::The previous release remains available as ${backup_tag}."
+                echo "::error::Existing release asset conflicts with the current installer: ${asset_name}"
+                exit 1
               fi
-              if [[ "$old_tag_exists" != 'true' ]]; then
-                delete_tag_ref_if_exists "$RELEASE_TAG" || true
-              fi
+            done
+            if (( ${#pending_assets[@]} > 0 )); then
+              gh release upload "$RELEASE_TAG" "${pending_assets[@]}"
             fi
-          }
-
-          # staging 已完整可用，旧 Release 也已备份，此时才切换正式 tag。
-          if ! ensure_tag_ref "$RELEASE_TAG" "$GITHUB_SHA"; then
-            rollback_release_switch
-            exit 1
-          fi
-          if ! gh release edit "$staging_tag" \
-            --tag "$RELEASE_TAG" \
-            --title "latest-commit-pre-release" \
-            --notes-file "$notes_file" \
-            --draft=false \
-            --prerelease \
-            --latest=false; then
-            rollback_release_switch
-            exit 1
           fi
 
-          promoted_release_id="$(release_id_for_tag "$RELEASE_TAG" || true)"
-          promoted_release_json="$(release_json_for_tag "$RELEASE_TAG" || true)"
+          release_json="$(release_json_for_tag "$RELEASE_TAG")"
+          release_id="$(jq -r '.id' <<< "$release_json")"
+          verify_current_assets "$release_id"
+
+          # 新产物完整可用后才切换 tag 和 Release 元数据；失败时恢复旧 tag。
+          if ! ensure_tag_ref "$RELEASE_TAG" "$GITHUB_SHA" \
+            || ! gh release edit "$RELEASE_TAG" \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_TAG" \
+              --notes-file "$notes_file" \
+              --draft=false \
+              --prerelease \
+              --latest=false; then
+            if [[ "$old_tag_exists" == 'true' ]]; then
+              ensure_tag_ref "$RELEASE_TAG" "$old_tag_sha" || true
+            else
+              delete_tag_ref_if_exists "$RELEASE_TAG" || true
+            fi
+            echo "::error::Failed to activate the verified pre-release; the previous tag was restored."
+            exit 1
+          fi
+
+          promoted_release_json="$(release_json_for_tag "$RELEASE_TAG")"
+          promoted_release_id="$(jq -r '.id' <<< "$promoted_release_json")"
           promoted_tag_sha="$(gh api "$(tag_ref_endpoint "$RELEASE_TAG")" --jq '.object.sha' 2> /dev/null || true)"
-          promoted_draft="$(jq -r '.draft' <<< "$promoted_release_json" 2> /dev/null || true)"
-          promoted_prerelease="$(jq -r '.prerelease' <<< "$promoted_release_json" 2> /dev/null || true)"
-          if [[ "$promoted_release_id" != "$staging_release_id" \
+          promoted_draft="$(jq -r '.draft' <<< "$promoted_release_json")"
+          promoted_prerelease="$(jq -r '.prerelease' <<< "$promoted_release_json")"
+          if [[ "$promoted_release_id" != "$release_id" \
             || "$promoted_draft" != 'false' \
             || "$promoted_prerelease" != 'true' \
             || "$promoted_tag_sha" != "$GITHUB_SHA" ]] \
-            || ! verify_release_assets "$staging_release_id"; then
-            echo "::error::Promoted pre-release verification failed: release_id=${promoted_release_id:-missing}, draft=${promoted_draft:-missing}, prerelease=${promoted_prerelease:-missing}, tag_sha=${promoted_tag_sha:-missing}."
-            rollback_release_switch
+            || ! verify_current_assets "$release_id"; then
+            echo "::error::Activated pre-release verification failed: release_id=${promoted_release_id:-missing}, draft=${promoted_draft:-missing}, prerelease=${promoted_prerelease:-missing}, tag_sha=${promoted_tag_sha:-missing}."
             exit 1
           fi
 
-          # 正式 Release 已完整可用，最后才删除旧的 backup Release/tag。
-          if [[ "$backup_ready" == 'true' ]]; then
-            if gh release delete "$backup_tag" --yes; then
-              delete_tag_ref_if_exists "$backup_tag" \
-                || echo "::warning::Failed to remove backup tag ${backup_tag}."
-            else
-              echo "::warning::Failed to remove backup release ${backup_tag}; the new pre-release is already active."
+          # 正式 Release 验证成功后，才删除不属于当前提交的旧产物。
+          obsolete_asset_ids="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" \
+            | jq -r --argjson current_names "$(printf '%s\n' "${!current_asset_sizes[@]}" | jq -Rsc 'split("\n")[:-1]')" \
+              '.[] | select((.name as $name | $current_names | index($name)) == null) | .id')"
+          cleanup_failed=false
+          while IFS= read -r obsolete_asset_id; do
+            [[ -z "$obsolete_asset_id" ]] && continue
+            removed=false
+            for attempt in 1 2 3; do
+              if gh api --method DELETE \
+                "repos/${GITHUB_REPOSITORY}/releases/assets/${obsolete_asset_id}"; then
+                removed=true
+                break
+              fi
+              sleep "$attempt"
+            done
+            if [[ "$removed" != 'true' ]]; then
+              cleanup_failed=true
+              echo "::error::Failed to remove obsolete release asset ${obsolete_asset_id}."
             fi
+          done <<< "$obsolete_asset_ids"
+          if [[ "$cleanup_failed" == 'true' ]]; then
+            exit 1
           fi
 
-          # 新版本已验证可用，此时可以安全清理以前失败运行遗留的 staging 草稿。
-          stale_staging_releases="$(gh api --paginate \
-            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" | jq -sc 'add')"
-          while IFS=$'\t' read -r stale_release_id stale_tag; do
-            if [[ -z "$stale_release_id" || -z "$stale_tag" ]]; then
-              continue
-            fi
-            if gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${stale_release_id}"; then
-              delete_tag_ref_if_exists "$stale_tag" \
-                || echo "::warning::Failed to remove stale staging tag ${stale_tag}."
-            else
-              echo "::warning::Failed to remove stale staging draft ${stale_tag}."
-            fi
-          done < <(jq -r \
-            --arg prefix "${RELEASE_TAG}-staging-" \
-            --arg current_release_id "$staging_release_id" \
-            '.[] | select(
-              .draft == true
-              and (.tag_name | startswith($prefix))
-              and (.id | tostring) != $current_release_id
-            ) | [.id, .tag_name] | @tsv' \
-            <<< "$stale_staging_releases")
+          final_assets_json="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100")"
+          final_asset_count="$(jq 'length' <<< "$final_assets_json")"
+          if (( final_asset_count != expected_asset_count )) \
+            || ! verify_current_assets "$release_id"; then
+            echo "::error::Final pre-release contains ${final_asset_count} assets; expected ${expected_asset_count}."
+            exit 1
+          fi
 
-          delete_tag_ref_if_exists "$staging_tag" \
-            || echo "::warning::Failed to remove staging tag ${staging_tag}."
+          # 兼容清理旧实现遗留的 staging 草稿；权限受限时只告警，不影响当前发布。
+          if stale_staging_releases="$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" 2> /dev/null | jq -sc 'add')"; then
+            while IFS=$'\t' read -r stale_release_id stale_tag; do
+              if [[ -z "$stale_release_id" || -z "$stale_tag" ]]; then
+                continue
+              fi
+              if gh api --method DELETE \
+                "repos/${GITHUB_REPOSITORY}/releases/${stale_release_id}" 2> /dev/null; then
+                delete_tag_ref_if_exists "$stale_tag" \
+                  || echo "::warning::Failed to remove stale staging tag ${stale_tag}."
+              else
+                echo "::warning::Unable to remove legacy staging draft ${stale_tag}; delete it manually."
+              fi
+            done < <(jq -r \
+              --arg prefix "${RELEASE_TAG}-staging-" \
+              '.[] | select(
+                .draft == true
+                and (.tag_name | startswith($prefix))
+              ) | [.id, .tag_name] | @tsv' \
+              <<< "$stale_staging_releases")
+          else
+            echo '::warning::Unable to list legacy staging drafts; current pre-release is unaffected.'
+          fi
+
           echo "Pre-release updated safely with ${expected_asset_count} installer asset(s)."
