@@ -149,7 +149,6 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: latest-commit-pre-release
-      BACKUP_RELEASE_TAG: backup-commit-pre-release
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
       - name: Check build freshness
