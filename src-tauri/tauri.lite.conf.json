@@ -8,6 +8,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "DSH App",
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
@@ -16,7 +17,8 @@
         "height": 540,
         "minWidth": 420,
         "minHeight": 460,
-        "center": true
+        "center": true,
+        "visible": false
       }
     ],
     "security": {

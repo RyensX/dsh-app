@@ -10,10 +10,33 @@ describe('desktop window state', () => {
       'src-tauri/tauri.lite.conf.json',
     ]) {
       const source = JSON.parse(readFileSync(resolve(config), 'utf8')) as {
-        app: { windows: Array<{ width: number, height: number, center: boolean }> }
+        app: { windows: Array<{
+          width: number
+          height: number
+          center: boolean
+          create: boolean
+          visible: boolean
+        }> }
       }
-      expect(source.app.windows[0]).toMatchObject({ width: 720, height: 540, center: true })
+      expect(source.app.windows[0]).toMatchObject({
+        width: 720,
+        height: 540,
+        center: true,
+        create: false,
+        visible: false,
+      })
     }
+  })
+
+  it('initializes native state before creating and showing the WebView', () => {
+    const native = readFileSync(resolve('src-tauri/src/lib.rs'), 'utf8')
+    const setup = native.slice(native.indexOf('.setup(|app|'), native.indexOf('let builder = builder.on_page_load'))
+
+    expect(setup.indexOf('app.manage(AppState::new())'))
+      .toBeLessThan(setup.indexOf('WebviewWindowBuilder::from_config'))
+    expect(setup).toContain('PageLoadEvent::Finished')
+    expect(setup.indexOf('is_bootstrap_url(window.app_handle(), payload.url())'))
+      .toBeLessThan(setup.indexOf('window.show()'))
   })
 
   it('keeps the launch window at its configured default until dsh is ready', () => {

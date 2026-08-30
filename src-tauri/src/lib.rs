@@ -24,7 +24,30 @@ mod runtime_manager;
 mod user_dirs;
 
 use app::AppState;
-use tauri::{Manager, RunEvent, Runtime};
+use readiness::same_origin;
+use tauri::{AppHandle, Manager, RunEvent, Runtime, Url};
+
+fn is_packaged_bootstrap_url(url: &Url) -> bool {
+    let native_protocol = url.scheme() == "tauri" && url.host_str() == Some("localhost");
+    let webview_protocol =
+        matches!(url.scheme(), "http" | "https") && url.host_str() == Some("tauri.localhost");
+    (native_protocol || webview_protocol)
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+}
+
+fn is_bootstrap_url<R: Runtime>(app: &AppHandle<R>, url: &Url) -> bool {
+    if tauri::is_dev() {
+        return app
+            .config()
+            .build
+            .dev_url
+            .as_ref()
+            .is_some_and(|dev_url| same_origin(dev_url, url));
+    }
+    is_packaged_bootstrap_url(url)
+}
 
 fn navigation_policy<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("navigation-policy")
@@ -35,6 +58,11 @@ fn navigation_policy<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
                     || url.host_str() == Some("tauri.localhost")
                     || url.host_str() == Some("127.0.0.1");
             };
+            if is_bootstrap_url(app, url) {
+                // 记录 WebView 实际采用的本地入口，避免依赖平台相关的 URL 映射与时序。
+                state.set_bootstrap_url(url.clone());
+                return true;
+            }
             if state.navigation_allowed(url) {
                 return true;
             }
@@ -50,6 +78,10 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
+                // 首次加载期间保持隐藏，由 page-load 回调统一负责第一次显示。
+                if !window.is_visible().unwrap_or(true) {
+                    return;
+                }
                 let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
@@ -61,13 +93,30 @@ pub fn run() {
                 std::io::Error::other(format!("{}: {}", error.title, error.message))
             })?;
             app.manage(AppState::new());
-            let window = app
-                .get_webview_window("main")
-                .ok_or("main WebView window is missing")?;
+            let window_config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|config| config.label == "main")
+                .cloned()
+                .ok_or("main WebView window configuration is missing")?;
+            let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
+                .on_page_load(|window, payload| {
+                    if !matches!(payload.event(), tauri::webview::PageLoadEvent::Finished)
+                        || !is_bootstrap_url(window.app_handle(), payload.url())
+                    {
+                        return;
+                    }
+                    if let Some(state) = window.app_handle().try_state::<AppState>() {
+                        state.set_bootstrap_url(payload.url().clone());
+                    }
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                })
+                .build()?;
             #[cfg(target_os = "macos")]
             macos_window::install(&window)?;
-            let url = window.url()?;
-            app.state::<AppState>().set_bootstrap_url(url);
             Ok(())
         });
 
@@ -117,4 +166,28 @@ pub fn run() {
             app::shutdown(app);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_only_packaged_webview_origins() {
+        for value in [
+            "tauri://localhost/",
+            "http://tauri.localhost/",
+            "https://tauri.localhost/lite.html",
+        ] {
+            assert!(is_packaged_bootstrap_url(&Url::parse(value).unwrap()));
+        }
+        for value in [
+            "about:blank",
+            "https://example.com/",
+            "http://tauri.localhost.evil/",
+            "http://tauri.localhost:1420/",
+        ] {
+            assert!(!is_packaged_bootstrap_url(&Url::parse(value).unwrap()));
+        }
+    }
 }
