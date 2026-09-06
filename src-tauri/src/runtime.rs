@@ -9,7 +9,7 @@ pub fn resource_stage(app: &AppHandle) -> Result<PathBuf, LaunchError> {
     let packaged = app
         .path()
         .resource_dir()
-        .map(|path| path.join(packaged_resource_directory()))
+        .map(|path| packaged_stage(&path))
         .map_err(|error| {
             runtime_error(
                 "The application resource directory is unavailable",
@@ -23,6 +23,11 @@ pub fn resource_stage(app: &AppHandle) -> Result<PathBuf, LaunchError> {
         development
     };
     Ok(stage_root)
+}
+
+fn packaged_stage(resource_dir: &Path) -> PathBuf {
+    // Node's entry-point resolver rejects ordinary Windows paths with a verbatim prefix.
+    dunce::simplified(resource_dir).join(packaged_resource_directory())
 }
 
 fn packaged_resource_directory() -> &'static str {
@@ -61,6 +66,7 @@ pub fn resolve_packaged_runtime(app: &AppHandle) -> Result<Option<RuntimeLayout>
 }
 
 pub fn load_layout(stage_root: &Path) -> Result<RuntimeLayout, LaunchError> {
+    let stage_root = dunce::simplified(stage_root);
     let manifest_path = stage_root.join("runtime-manifest.json");
     let source = fs::read_to_string(&manifest_path).map_err(|error| {
         runtime_error(
@@ -143,6 +149,54 @@ mod tests {
         assert_eq!(
             packaged_resource_directory(),
             if cfg!(windows) { "r" } else { "resources" }
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn packaged_paths_simplify_drive_paths_and_preserve_network_shares() {
+        assert_eq!(
+            packaged_stage(Path::new(r"\\?\C:\Program Files\DSH App")),
+            PathBuf::from(r"C:\Program Files\DSH App\r")
+        );
+        assert_eq!(
+            packaged_stage(Path::new(r"\\?\UNC\server\share\DSH App")),
+            PathBuf::from(r"\\?\UNC\server\share\DSH App\r")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn node_starts_a_manager_entry_from_a_canonical_windows_resource_dir() {
+        let temporary = tempfile::tempdir().unwrap();
+        let resource_dir = temporary.path().join("DSH App with spaces");
+        fs::create_dir_all(&resource_dir).unwrap();
+        let canonical = fs::canonicalize(&resource_dir).unwrap();
+        assert!(canonical.to_string_lossy().starts_with(r"\\?\"));
+        let stage = packaged_stage(&canonical);
+        let entry = stage.join("runtime-tools/dsh-runtime-manager.mjs");
+        fs::create_dir_all(entry.parent().unwrap()).unwrap();
+        fs::write(&entry, "console.log('manager-started')\n").unwrap();
+        let dirs = crate::user_dirs::UserDirs::from_home(&canonical).unwrap();
+        let node = std::env::var_os("DSH_APP_TEST_NODE").unwrap_or_else(|| "node".into());
+        let mut command = std::process::Command::new(node);
+        command
+            .arg(&entry)
+            .current_dir(&dirs.workspace)
+            .env_remove("NODE_OPTIONS")
+            .env_remove("NODE_PATH");
+        crate::process::configure_background_process(&mut command);
+        let output = command
+            .output()
+            .expect("Node is required for the Windows launch regression test");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            "manager-started"
         );
     }
 }

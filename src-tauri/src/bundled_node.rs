@@ -8,7 +8,11 @@ pub fn resolve(_app: &AppHandle, bootstrap: &BootstrapManifest) -> Result<PathBu
     let packaged = std::env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(PathBuf::from))
-        .map(|path| path.join(executable_name()));
+        .map(|path| {
+            dunce::simplified(&path)
+                .to_path_buf()
+                .join(executable_name())
+        });
     let development = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("binaries")
         .join(format!(

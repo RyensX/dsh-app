@@ -367,6 +367,7 @@ pub fn reconcile_remote_plugins(
         .args(["--dsh-commit", &layout.manifest.dsh.commit])
         .env_remove("NODE_OPTIONS")
         .env_remove("NODE_PATH")
+        .current_dir(&dirs.workspace)
         .stdin(Stdio::null());
     configure_background_process(&mut command);
     let output = command.output().map_err(|error| {
@@ -465,6 +466,7 @@ fn install_baseline(
         .env_remove("NODE_OPTIONS")
         .env_remove("NODE_PATH")
         .env("DSH_TELEMETRY_DISABLED", "1")
+        .current_dir(&dirs.workspace)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(tag) = &bootstrap.dsh.tag {
@@ -621,6 +623,7 @@ fn prepare_restore_profile(
         .args(["--credentials-layout", credentials_layout])
         .env_remove("NODE_OPTIONS")
         .env_remove("NODE_PATH")
+        .current_dir(&dirs.workspace)
         .stdin(Stdio::null());
     configure_background_process(&mut command);
     let output = command.output().map_err(|error| {
@@ -692,6 +695,7 @@ fn refresh_managed_plugins(
         .args(["--runtime-id", runtime_id])
         .env_remove("NODE_OPTIONS")
         .env_remove("NODE_PATH")
+        .current_dir(&dirs.workspace)
         .stdin(Stdio::null());
     configure_background_process(&mut command);
     let output = command.output().map_err(|error| {

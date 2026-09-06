@@ -32,6 +32,7 @@ lite = [
 
 [dependencies]
 command-group = "5.0.1"
+dunce = "1.0.5"
 open = "5.3.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.145"

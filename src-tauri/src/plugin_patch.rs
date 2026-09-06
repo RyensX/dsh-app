@@ -71,14 +71,14 @@ pub fn rebuild_patch(layout: &RuntimeLayout, dirs: &UserDirs) -> Result<PathBuf,
         ));
     }
 
-    let canonical_root = fs::canonicalize(&layout.runtime_root)
+    let canonical_root = dunce::canonicalize(&layout.runtime_root)
         .map_err(|error| patch_error(&layout.runtime_root, &error.to_string()))?;
     let mut entries = Vec::with_capacity(index.plugins.len());
     for plugin in index.plugins {
         validate_id(&plugin.id).map_err(|cause| patch_error(&index_path, cause))?;
         let relative =
             contained_relative(&plugin.entry).map_err(|cause| patch_error(&index_path, cause))?;
-        let entry = fs::canonicalize(layout.runtime_root.join(relative))
+        let entry = dunce::canonicalize(layout.runtime_root.join(relative))
             .map_err(|error| patch_error(&index_path, &error.to_string()))?;
         if !entry.starts_with(&canonical_root) || !entry.is_file() {
             return Err(patch_error(

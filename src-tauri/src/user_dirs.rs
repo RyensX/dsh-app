@@ -38,6 +38,7 @@ impl UserDirs {
     }
 
     pub fn from_home(home: &Path) -> Result<Self, LaunchError> {
+        let home = dunce::simplified(home);
         let root = home.join(".dsh-app");
         let runtime = root.join("runtime");
         let dirs = Self {
@@ -109,6 +110,26 @@ fn data_dir_error(path: &Path, error: &std::io::Error) -> LaunchError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn canonical_home_produces_node_compatible_paths() {
+        let home = tempfile::tempdir().unwrap();
+        let canonical = fs::canonicalize(home.path()).unwrap();
+        assert!(canonical.to_string_lossy().starts_with(r"\\?\"));
+        let dirs = UserDirs::from_home(&canonical).unwrap();
+        for path in [
+            &dirs.root,
+            &dirs.workspace,
+            &dirs.profile,
+            &dirs.patch,
+            &dirs.remote_plugins_state,
+        ] {
+            assert!(!path.to_string_lossy().starts_with(r"\\?\"));
+            assert!(path.starts_with(dunce::simplified(&canonical)));
+        }
+        assert!(dirs.workspace.is_dir());
+    }
 
     #[test]
     fn keeps_all_user_data_under_the_external_root() {

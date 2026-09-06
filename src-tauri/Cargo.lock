@@ -865,6 +865,7 @@ version = "1.0.0"
 dependencies = [
  "block2",
  "command-group",
+ "dunce",
  "flate2",
  "node-semver",
  "objc2",

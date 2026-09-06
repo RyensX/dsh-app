@@ -161,7 +161,7 @@ fn compatible_candidate(
     bootstrap: &BootstrapManifest,
 ) -> Result<PathBuf, LaunchError> {
     validate_executable(candidate)?;
-    let node = fs::canonicalize(candidate).map_err(|error| {
+    let node = dunce::canonicalize(candidate).map_err(|error| {
         node_path_error(
             NODE_NOT_EXECUTABLE,
             "The detected Node path cannot be resolved",
